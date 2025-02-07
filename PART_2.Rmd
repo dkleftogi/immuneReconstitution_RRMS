@@ -1,0 +1,1658 @@
+---
+title: "High dimensional immune profiling following aHSCT in MS - PART2"
+author: "Dimitrios Kleftogiannis"
+date: "2024-9-15"
+output: html_document
+---
+
+### Utility
+
+The data interpretation is performed in collaboration with **Dr. Sonia Gavasso and Jonas Haugsøen**. 
+
+The utility of this code is to reproduce the part of the analysis with the cellular states as summarised in main Figures 4-5 of the manuscript.
+
+### Contact
+
+Comments and bug reports are welcome, please email: Dimitrios Kleftogiannis (dimitrios.kleftogiannis@uib.no)
+
+We are also interested to know about how you have used our source code, including any improvements that you have implemented.
+ 
+You are free to modify, extend or distribute our source code, as long as our copyright notice remains unchanged and included in its entirety. 
+
+### License
+
+This code is licensed under the MIT License.
+
+Copyright 2024, University of Bergen (UiB) and Neuro-SysMed, Norway
+
+
+### Loading packages 
+First we load the packages required for the analysis.
+
+```{r load packages, echo=FALSE, eval=FALSE, error=TRUE, warning=FALSE,cache=TRUE}
+# set global chunk options
+# load libraries
+library(RColorBrewer)
+library(gplots) 
+library(ggplot2)
+library(gdata)
+library(gridExtra)
+library(grid)
+library(reshape2)
+library(ggthemes)
+library(ggpubr)
+library(dplyr)
+library(umap)
+library(ComplexHeatmap)
+library(ConsensusClusterPlus)
+library(readxl)
+library(igraph)
+library(matrixStats)
+library(ggforce)
+library(ggraph)
+library(ggridges)
+library(vite)
+library(MASS)
+```
+
+### Initialise working directory and load in-house functions
+```{r initialise workspace,cache=TRUE,echo=FALSE}
+setwd("/Home/siv32/dkl081/Desktop/RAMMS/code_repo")
+```
+
+### Specify the markers of interest in the antibody panel
+```{r specify marker names,cache=TRUE,echo=FALSE}
+#all markers
+col.names <- c("CD16","CD4","CD14","CD19","CD3","CD235ab","CD11c","CD33",
+               "CD133","CD123","CD162","CD185","CD45RA","CD278","CD194","CD161",
+               "CD184","CD27","CD44","CD127","CD10","CD73","HLADR","CD146",
+               "CD117","CD8a","CD34","CD105","CD49d","CD20","CD25","CD66b",
+               "CD49f","CD45RO","CD90","CD45","CD195","CD38","CD196","CD135","CD56")
+col.names
+
+
+col.names.info <- c('type','type','type','type','type','state','type','type',
+                    'state','type','state','state','type','state','state','state',
+                    'state','state','state','state','state','state','type','state',
+                    'state','type','type','state','state','type','state','type',
+                    'state','type','state','type','state','type','state','state','type')
+
+#define the marker_info
+marker_info <- data.frame(Channel=NA,
+                          marker_name=col.names,
+                          marker_class=col.names.info)
+
+```
+
+### Load the cellular states found using unsupervised learning in a small training set of cells and predict the results for the remaining cells in the discovery cohort
+
+```{r load results in the discovery cohort, echo=TRUE, cache=TRUE,eval=FALSE}
+
+#discovery cohort
+groupA <- 'BL'
+groupD <- '100d'
+groupE <- '6m'
+groupF <- '12m'
+
+#find the state markers
+stateMarkers <- marker_info[marker_info$marker_class=='state',]
+stateMarkerNames <- stateMarkers$marker_name
+
+#we work with 17 cell types in this order
+all_cellType_order <- c("CD4_Memory" ,"CD4_Naive" ,
+                        "CD8_Memory","CD8_Naive",
+                        "T_DN","T_other",
+                        "B_Memory" ,"B_Naive" ,'B_other',
+                        "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                        "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+
+colors_all <- c('slategray1','slategray3',
+                'steelblue1','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick4','indianred1',
+                'orange','orange3','peachpuff',
+                'palegreen3','palegreen1','lightgoldenrod3','lightgoldenrod1','greenyellow')
+
+mySelectedCellTypes <- all_cellType_order
+start_time = Sys.time()
+allStates.mat <- data.frame()
+allAbundances <- data.frame()
+myD <- 1
+for(myCelltype in mySelectedCellTypes){
+  
+  myfile <- paste('FlowSOM_allData_states_',myCelltype,'.RDa',sep ='')
+  load(myfile) 
+  
+  #first concatenate the heatmap with all states
+  heat_mat_test <- as.data.frame(heat_mat_test1)
+  heat_mat_test$CellType <- myCelltype
+  heat_mat_test$ID <- paste('s',1:nrow(heat_mat_test),sep='')
+  heat_mat_test$ID2 <- paste(myCelltype,'_s',1:nrow(heat_mat_test),sep='')
+  rownames(heat_mat_test) <- heat_mat_test$ID
+  allStates.mat <- rbind(allStates.mat,heat_mat_test)
+  
+  #next concatenate the relative abundances
+  myAbundance <- data_df_test %>% 
+    group_by(Sample,pop_labels) %>% 
+    summarise(samples = n()) %>%
+    mutate(n=samples/sum(samples))
+  
+  pop_labels <- as.numeric(myAbundance$pop_labels)
+  
+  myAbundance <- as.data.frame(myAbundance)
+  myAbundance$Sample <- factor(myAbundance$Sample,levels = c(groupA,groupD,groupE,groupF))
+  myAbundance$pop_labels <- factor(myAbundance$pop_labels,levels = c(1:max(pop_labels)))
+  myAbundance$ID <- paste('s',myAbundance$pop_labels,sep='') 
+  myAbundance$ID2 <- paste(myCelltype,'_s',myAbundance$pop_labels,sep='')
+  myAbundance$CellType <- myCelltype
+  
+  allAbundances <- rbind(allAbundances,myAbundance)
+  
+  #make one plot per cell type
+  #make a heatmap of all states
+  my_row_annot <- data.frame(CellType=heat_mat_test$CellType)  
+  rownames(my_row_annot) <- rownames(heat_mat_test)
+  
+  myD <-myD + 1    
+  
+} #end of for loop to parse the cell types
+end_time = Sys.time()
+end_time-start_time
+
+
+#visualise the abundance of cellular states per cell type 
+allAbundances$ID <- factor(allAbundances$ID,levels =  paste('s',c(1:length(unique(allAbundances$ID))),sep='') )
+allAbundances$CellType <- factor(allAbundances$CellType, levels=all_cellType_order)
+
+myPalete <- c("#FEE6CE","#FDAE6B","#D94801","#FDE0EF","#9E9AC8", "#54278F","#C6DBEF","#4292C6", "#084594",'khaki3') 
+
+o <- ggplot(allAbundances) + aes(x=Sample,y=n,fill=ID)+
+  geom_bar(stat='identity',position='stack',width = 0.48,alpha=1,color='black',size=0.15)+
+  #geom_hline(yintercept = 0.25,color='red',size=0.25)+
+  #geom_hline(yintercept = 0.875,color='red',size=0.25)+
+  facet_wrap(~CellType,scales='free_y',nrow=4)+
+  #geom_text(aes(y = n, label = ID), position = position_stack(vjust = 0.5),color = "black", size=2)+
+  theme_clean()+
+  ylab('Relative abundance')+
+  xlab('Distinct cellular states per cell type')+
+  theme(axis.text.y = element_text( size = 8 ),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 8),
+        axis.title.x = element_text( size = 8,face = 'bold' ),
+        axis.title.y = element_text( size = 8 ),
+        strip.text = element_text(size = 8,face='bold',lineheight=1),
+        legend.position = "bottom",aspect.ratio = 0.8)+
+  scale_fill_manual(values=myPalete)+
+  guides(fill = guide_legend(override.aes = list(size=1.5),nrow=2,title=""))
+
+myfile <- paste('plots/Figure_4unmodified.pdf',sep ='')
+pdf(myfile)
+print(o)
+dev.off()
+
+```
+
+### Self consistency test to assess the performance of LDA in the discovery cohort
+
+```{r performance in the discovery cohort, echo=TRUE, cache=TRUE,eval=FALSE}
+
+mySelectedCellTypes <- c("CD4_Memory" ,"CD4_Naive" ,
+                         "CD8_Memory","CD8_Naive",
+                         "T_DN","T_other",
+                         "B_Memory" ,"B_Naive" ,'B_other',
+                         "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                         "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+
+########################################################################################################
+########################################################################################################
+#using standard performance metrics
+performanceLDA <- data.frame()
+for(myCelltype in mySelectedCellTypes){
+  
+  myfile <- paste('FlowSOM_allData_states_',myCelltype,'.RDa',sep ='')
+  load(myfile) 
+  
+  IDX <- sample(nrow(data_df_train))
+  Ncell <- floor(0.5*nrow(data_df_train))
+  selectTrainIDX <- IDX[1:Ncell]
+  selectTestIDX <- IDX[(Ncell+1):length(IDX)]
+  trainingSet <- data_df_train[selectTrainIDX,]
+  testingSet <- data_df_train[selectTestIDX,]
+  #check the dimensions of the data
+  dim(trainingSet)
+  dim(testingSet)
+  nrow(testingSet)+nrow(trainingSet)==nrow(data_df_train)
+  #prepare the data
+  testingSetLabels <- testingSet$pop_labels
+  testingSetValues <- as.matrix(testingSet[,1:(ncol(testingSet)-3)])
+  trainingSetLabels <- trainingSet$pop_labels
+  trainingSetValues <- as.matrix(trainingSet[,1:(ncol(trainingSet)-3)])
+  #APPROACH #4: LDA 
+  tmp <- data.frame(trainingSetValues)
+  tmp$CellType <- trainingSetLabels
+  modelLDA <- lda(CellType~.,data=tmp)
+  predictedLabel <- predict(modelLDA, newdata = data.frame(testingSetValues))
+  #save the max posterior probability
+  prob_matrix<-matrix(0L, nrow = nrow(testingSetValues), ncol =1)
+  prob_matrix <- as.matrix(apply(predictedLabel$posterior,1,max))
+  
+  predictionsLDA <- data.frame(realLabel=testingSetLabels,
+                               predictedLabel=predictedLabel$class,
+                               Posterior=prob_matrix[,1])
+  dt <- data.frame()
+  for(idx in unique(testingSetLabels)){
+    
+    currentType <- idx
+    classifiedAsCurrent <- predictionsLDA[predictionsLDA$predictedLabel==currentType,]
+    tp_row <- length(which(classifiedAsCurrent$realLabel==currentType))
+    classifiedAsNonCurrent <- predictionsLDA[predictionsLDA$predictedLabel!=currentType,]
+    tn_row <- length(which(classifiedAsNonCurrent$realLabel!=currentType))
+    fp_row <- length(which(classifiedAsNonCurrent$realLabel==currentType))
+    fn_row <- length(which(classifiedAsCurrent$realLabel!=currentType))
+    
+    a <- data.frame(Sen=tp_row/(tp_row+fn_row),
+                    Spe=tn_row/(tn_row+fp_row),
+                    #PPV=tp_row/(tp_row+fp_row),
+                    F1=2*tp_row/(2*tp_row+fp_row+fn_row),
+                    Acc=(tp_row+tn_row)/(tp_row+tn_row+fp_row+fn_row),
+                    State=idx)
+    dt <- rbind(dt,a)
+  }
+  dt$CellType <- myCelltype
+  performanceLDA <- rbind(performanceLDA,dt)
+  
+}
+
+all_cellType_order <- c("CD4_Memory" ,"CD4_Naive" ,
+                        "CD8_Memory","CD8_Naive",
+                        "T_DN","T_other",
+                        "B_Memory" ,"B_Naive" ,'B_other',
+                        "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                        "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+
+color_qual_flow2 <- c('dodgerblue','coral1',"#FFD258","#3F1B03", "#894F36",'#9a6324',"#F4AD31",'khaki3',
+                      "#F4800C",'darkorange3' , 'brown2',"#CC242A",'firebrick4',
+                      "#EF8ECC",'#e6beff','#fabebe','darkorchid4','lightpink3','mediumpurple2',
+                      "#1C750C","#557F7A","#4DB23B","#066970",'#008080',"#b0c6a2",
+                      '#808000',"#CBD49C",'olivedrab2','mediumaquamarine','paleturquoise1','steelblue3',
+                      "#6471E2",'skyblue','#4363d8','#46f0f0','#000075','slategray3',
+                      'mediumblue','cornflowerblue','#ffe119','#ffd8b1',"#FEEDC3",
+                      'bisque3','#808080','black','gray88','gray','burlywood4')
+
+tmp <- melt(performanceLDA,id.vars = c("State","CellType" ))
+tmp$CellType <- factor(tmp$CellType,levels = all_cellType_order)
+colnames(tmp)[3] <- 'Metric'
+tmp$Metric <- factor(tmp$Metric,levels = c('Acc','Sen','Spe','F1'))
+
+tmp$State <- factor(tmp$State,levels=1:10)
+
+myPalete <- c("#FEE6CE","#FDAE6B","#D94801","#FDE0EF","#9E9AC8", "#54278F","#C6DBEF","#4292C6", "#084594",'khaki3') 
+
+performance_sanityTest <- ggplot(tmp, aes(x = Metric, y = value, color=State,fill = Metric)) +
+  geom_jitter(height=0,width=0.2, size=1,alpha=0.8)+
+  geom_boxplot(width=0.15,
+               alpha=0.3,
+               size=0.25,
+               outlier.colour = "black",
+               outlier.shape = NA,
+               outlier.fill = "red",
+               outlier.size = 0.05,
+               notch = FALSE,color='black')+
+  facet_wrap(~CellType,scales='free_y',nrow=4)+
+  ggtitle('LDA self-consistency test - Discovery cohort')+
+  theme_clean() +
+  ylim(0.5,1)+
+  scale_fill_manual(values = color_qual_flow2)+
+  scale_color_manual(values = myPalete)+
+  theme(axis.text.y = element_text( size = 12 ),
+        axis.text.x = element_text(angle = 90, vjust = 0.05, hjust = 0.95, size = 12),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text = element_text(size = 12,face='bold',lineheight=1),
+        legend.position = "none",aspect.ratio = 0.8)
+
+myfile <- paste('plots/Supp_Figure_9A.pdf',sep ='')
+pdf(myfile, width = 8, height = 10)
+print(performance_sanityTest)
+dev.off()
+
+########################################################################################################
+#using correlation as a metric of agreement of the predicted states
+
+colors_all <- c('slategray1','slategray3',
+                'steelblue1','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick4','indianred1',
+                'orange','orange3','peachpuff',
+                'palegreen3','palegreen1','lightgoldenrod3','lightgoldenrod1','greenyellow')
+
+summaryCellsStates <- data.frame()
+corrAgree <- data.frame()
+corrDisagree <- data.frame()
+
+for(myCelltype in mySelectedCellTypes){
+  
+  myfile <- paste('/Home/siv32/dkl081/Desktop/RAMMS/paper_figure_codes/state_discovery_plots/data_files/FlowSOM_allData_states_',myCelltype,'.RDa',sep ='')
+  load(myfile) 
+  
+  stateNumberTest <- length(unique(data_df_test$pop_labels))
+  stateNumberTrain <- length(unique(data_df_train$pop_labels))
+  
+  myMatrix <- matrix(-1,nrow=stateNumberTest,ncol=stateNumberTrain)
+  numCells <- matrix(-1,nrow=stateNumberTrain,ncol=1)
+  for(i in 1:stateNumberTest){
+    
+    tmp_testData <- data_df_test[data_df_test$pop_labels==i,1:28]
+    mean_testData <- colMeans(tmp_testData)
+    
+    for(j in 1:stateNumberTrain){
+      
+      tmp_trainData <- data_df_train[data_df_train$pop_labels==j,1:28]
+      mean_trainData <- colMeans(tmp_trainData)
+      myMatrix[i,j] <- cor(mean_testData,mean_trainData)
+      numCells[j,1] <- nrow(tmp_trainData)
+      
+      #skip the cases where we have few cells
+      if(nrow(tmp_trainData)>=100){
+        
+        if(i==j){
+          a1 <- data.frame(State=j,
+                           CellType=myCelltype,
+                           Corr=cor(mean_testData,mean_trainData))
+          corrAgree <- rbind(corrAgree,a1)
+        }else{
+          a2 <- data.frame(State_i=i,
+                           State_j=j,
+                           CellType=myCelltype,
+                           Corr=cor(mean_testData,mean_trainData))
+          corrDisagree <- rbind(corrDisagree,a2)
+        }
+      }
+    }
+  }
+  dt <- data.frame(State=1:stateNumberTrain,
+                   numCells,
+                   CellType=myCelltype)
+  
+  summaryCellsStates <- rbind(summaryCellsStates,dt)
+}
+
+corrAgree$Status <- 'Predicted'
+corrDisagree$Status <- 'nonPredicted'
+colnames(corrDisagree)[2] <- 'State'
+
+corrDisagree$State <- 0
+
+tmp <- rbind(corrAgree[,1:4],corrDisagree[,2:5])
+tmp$CellType <- factor(tmp$CellType,levels = all_cellType_order)
+tmp$Status <- factor(tmp$Status,levels = c('Predicted','nonPredicted'))
+tmp$State <- factor(tmp$State,levels=0:10)
+
+myPalete <- c('gray',"#FEE6CE","#FDAE6B","#D94801","#FDE0EF","#9E9AC8", "#54278F","#C6DBEF","#4292C6", "#084594",'khaki3') 
+
+corr_sanityTest <- ggplot(tmp, aes(x = Status, y = Corr, color=State,fill = CellType)) +
+  geom_jitter(height=0,width=0.2, size=2,alpha=0.8)+
+  geom_boxplot(width=0.1,
+               alpha=0.3,
+               size=0.25,
+               outlier.colour = "black",
+               outlier.shape = NA,
+               outlier.fill = "red",
+               outlier.size = 0.05,
+               notch = FALSE,color='black')+
+  facet_wrap(~CellType,scales='free_y',nrow=4)+
+  theme_clean() +
+  ylab('Pearsons correlation ')+
+  #ylim(0.5,1)+
+  scale_color_manual(values = myPalete)+
+  scale_fill_manual(values = colors_all)+
+  theme(axis.text.y = element_text( size = 12 ),
+        axis.text.x = element_text(angle = 90, vjust = 0.05, hjust = 0.95, size = 12),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text = element_text(size = 12,face='bold',lineheight=1),
+        legend.position = "none",aspect.ratio = 0.8)
+
+
+myfile <- paste('plots/Supp_Figure_9B.pdf',sep ='')
+pdf(myfile, width = 8, height = 10)
+print(corr_sanityTest)
+dev.off()
+
+```
+
+### Visualise the cellular states in the discovery cohort using functional graphs and generate heatmaps showing the average expression profiles of all cellular states per compartment
+
+```{r make functional graphs and heatmaps, echo=TRUE, cache=TRUE,eval=FALSE}
+
+combinedScaledHeatmaps <- data.frame()
+
+#load an in-house function
+source('computeCellTypeDistance.R')
+
+###########################################################
+# T cells
+###########################################################
+a <- which(allStates.mat$CellType=='CD4_Memory'| 
+               allStates.mat$CellType=='CD4_Naive'|
+               allStates.mat$CellType=='CD8_Memory'| 
+               allStates.mat$CellType=='CD8_Naive'| 
+               allStates.mat$CellType=='T_DN'| 
+               allStates.mat$CellType=='T_other')
+tmp <- allStates.mat[a,]
+
+my_colour <- list(
+  CellType=c(CD4_Memory=colors_all[1],
+             CD4_Naive=colors_all[2],
+             CD8_Memory=colors_all[3],
+             CD8_Naive=colors_all[4],
+             T_DN=colors_all[5],
+             T_other=colors_all[6])
+)
+
+myfile <- paste('plots/Supp_Figure_10.pdf',sep ='')
+
+rownames(tmp) <- tmp$ID2
+tmp2 <- tmp[,1:28]
+tmp2[tmp2 > quantile(as.matrix(tmp[,1:28]),0.99)] <- quantile(as.matrix(tmp[,1:28]),0.99)
+
+breaksList <- seq(0, 1.8, by = 0.2)
+pheatmap::pheatmap(tmp2[,1:28],
+                   cluster_cols = F,
+                   cluster_rows = F,
+                   filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 6,
+                   cutree_rows = 14,
+                   fontsize_row = 10,
+                   width=9,
+                   height=5.5,
+                   breaks = breaksList,
+                   color = brewer.pal(9,'Greys'),
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   gaps_row = c(8,17,27,35,38) )
+
+combinedScaledHeatmaps <- rbind(combinedScaledHeatmaps,tmp2)
+combinedScaledHeatmaps$CellType <- tmp$CellType
+
+a <- which(allAbundances$CellType=='CD4_Memory'| 
+           allAbundances$CellType=='CD4_Naive'| 
+           allAbundances$CellType=='CD8_Memory'| 
+           allAbundances$CellType=='CD8_Naive'| 
+           allAbundances$CellType=='T_DN'| 
+           allAbundances$CellType=='T_other')
+tmp_abundance <- allAbundances[a,]
+sum_abundance <- tmp_abundance %>% 
+  group_by(ID2) %>% 
+  summarise(samples = sum(samples) )
+
+filtering_T <- 0.9
+#dd_Train <- computeCellTypeDistance(tmp[,1:23],colnames(tmp[1:23]) ,filtering_T)
+dd_Train <- matrix(-1,nrow = nrow(tmp),ncol = nrow(tmp))
+for(idx1 in 1:nrow(tmp)){
+  a <- tmp[idx1,1:28]
+  for(idx2 in 1:nrow(tmp)){
+    b <- tmp[idx2,1:28]
+    dd_Train[idx1,idx2] <- cor(unlist(a),unlist(b))
+  }
+}
+
+dd_Train[dd_Train<filtering_T] <- 0
+
+G.training <- igraph::graph_from_adjacency_matrix(dd_Train, weighted=TRUE,mode = "undirected")
+
+message("Running ForceAtlas2...")
+flush.console()
+
+G.training <- complete_forceatlas2(G.training, 
+                                   first.iter = 500000, 
+                                   overlap.method = 'repel', 
+                                   overlap.iter=10000,
+                                   ew.influence=10000,
+                                   kgrav=18)
+#obtain the vertex attributes
+G.training.attr <- vertex_attr(G.training)
+#the coordinates of the landmarks can be used for visualisation
+G.training.attr <- data.frame(x=G.training.attr$x,
+                              y=G.training.attr$y,
+                              Name=tmp$ID2,
+                              CellType=tmp$CellType)
+
+sum_abundance$Flag <- ''
+sum_abundance[sum_abundance$ID2=='CD4_Naive_s1'|
+              sum_abundance$ID2=='CD4_Memory_s3'|
+              sum_abundance$ID2=='CD8_Memory_s1'|
+              sum_abundance$ID2=='CD8_Memory_s8'|
+              sum_abundance$ID2=='CD8_Naive_s7'|
+              sum_abundance$ID2=='CD8_Naive_s8'|  
+              sum_abundance$ID2=='T_other_s3'  
+                ,'Flag'] <- '<100 cells'
+
+dr <- match(tmp$ID2,sum_abundance$ID2)
+V(G.training)$Name <- factor(tmp$ID,levels = paste('s',1:length(unique(tmp$ID)),sep=''))
+V(G.training)$CellType <-  factor(tmp$CellType,levels = c('CD4_Memory','CD4_Naive',
+                                                          'CD8_Memory','CD8_Naive','T_DN','T_other'))
+V(G.training)$Cells <- sum_abundance$Flag[dr]
+
+o <- ggraph(G.training) +
+  geom_edge_link(alpha=.4,edge_colour='black')+
+  geom_node_point(aes(fill=CellType),shape=21,size=15)+
+  geom_node_text(aes(label=Name),fontface='bold',size=8)+
+  geom_node_text(aes(filter=Cells=='<100 cells',label='<100'),size=8,lineheight=8,colour='red4')+
+  scale_fill_manual(values=colors_all[1:6])+
+  scale_color_brewer(palette='Set3')+
+  theme_graph(base_family = 'Helvetica') + 
+  theme(legend.position="bottom",
+        legend.text = element_text(size=14))+
+  guides(fill = guide_legend(override.aes = list(size=14),nrow=2,title=""))
+
+myfile <- paste('plots/Supp_Figure_14a.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o)
+dev.off()
+
+  
+###########################################################
+# B cells
+###########################################################
+a <- which(allStates.mat$CellType=='B_Memory'| 
+             allStates.mat$CellType=='B_Naive' | 
+             allStates.mat$CellType=='B_other')
+tmp <- allStates.mat[a,]
+
+my_colour <- list(
+  CellType=c(B_Memory=colors_all[7],
+             B_Naive=colors_all[8],
+             B_other=colors_all[9]))
+
+myfile <- paste('plots/Supp_Figure_11.pdf',sep ='')
+
+rownames(tmp) <- tmp$ID2
+tmp2 <- tmp[,1:28]
+tmp2[tmp2 > quantile(as.matrix(tmp[,1:28]),0.99)] <- quantile(as.matrix(tmp[,1:28]),0.99)
+
+breaksList <- seq(0, 1.8, by = 0.2)
+
+pheatmap::pheatmap(tmp2[,1:28],
+                   cluster_cols = F,
+                   cluster_rows = F,
+                   filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 6,
+                   cutree_rows = 14,
+                   fontsize_row = 10,
+                   width=9,
+                   height=5.5,
+                   breaks = breaksList,
+                   color = brewer.pal(9,'Greys'),
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   gaps_row = c(8,13) )
+
+tmp2$CellType <- tmp$CellType
+combinedScaledHeatmaps <- rbind(combinedScaledHeatmaps,tmp2)
+
+a <- which(allAbundances$CellType=='B_Memory'| 
+             allAbundances$CellType=='B_Naive'| 
+             allAbundances$CellType=='B_other' )
+tmp_abundance <- allAbundances[a,]
+sum_abundance <- tmp_abundance %>% 
+  group_by(ID2) %>% 
+  summarise(samples = sum(samples) )
+
+filtering_T <- 0.9
+#dd_Train <- computeCellTypeDistance(tmp[,1:23],colnames(tmp[1:23]) ,filtering_T)
+dd_Train <- matrix(-1,nrow = nrow(tmp),ncol = nrow(tmp))
+for(idx1 in 1:nrow(tmp)){
+  a <- tmp[idx1,1:28]
+  for(idx2 in 1:nrow(tmp)){
+    b <- tmp[idx2,1:28]
+    dd_Train[idx1,idx2] <- cor(unlist(a),unlist(b))
+  }
+}
+
+dd_Train[dd_Train<filtering_T] <- 0
+
+G.training <- igraph::graph_from_adjacency_matrix(dd_Train, weighted=TRUE,mode = "undirected")
+
+message("Running ForceAtlas2...")
+flush.console()
+G.training <- complete_forceatlas2(G.training, 
+                                   first.iter = 500000, 
+                                   overlap.method = 'repel', 
+                                   overlap.iter=10000,
+                                   ew.influence=10000,
+                                   kgrav=18)
+#obtain the vertex attributes
+G.training.attr <- vertex_attr(G.training)
+#the coordinates of the landmarks can be used for visualisation
+G.training.attr <- data.frame(x=G.training.attr$x,
+                              y=G.training.attr$y,
+                              Name=tmp$ID2,
+                              CellType=tmp$CellType)
+
+sum_abundance$Flag <- ''
+sum_abundance[sum_abundance$ID2=='B_Memory_s3' |
+                sum_abundance$ID2=='B_Naive_s3' |
+                sum_abundance$ID2=='B_Naive_s5' |
+                sum_abundance$ID2=='B_other_s1' |  
+                sum_abundance$ID2=='B_other_s3' |
+                sum_abundance$ID2=='B_other_s4' 
+              ,'Flag'] <- '<100 cells'
+
+dr <- match(tmp$ID2,sum_abundance$ID2)
+V(G.training)$Name <- factor(tmp$ID,levels = paste('s',1:length(unique(tmp$ID)),sep=''))
+V(G.training)$CellType <-  factor(tmp$CellType,levels = c('B_Memory','B_Naive','B_other'))
+V(G.training)$Cells <- sum_abundance$Flag[dr]
+
+o <- ggraph(G.training) +
+  geom_edge_link(alpha=.4,edge_colour='black')+
+  geom_node_point(aes(fill=CellType),shape=21,size=15)+
+  geom_node_text(aes(label=Name),fontface='bold',size=8)+
+  geom_node_text(aes(filter=Cells=='<100 cells',label='<100'),size=8,lineheight=8,colour='red4')+
+  scale_fill_manual(values=colors_all[7:9])+
+  scale_color_brewer(palette='Set3')+
+  theme_graph(base_family = 'Helvetica') + 
+  theme(legend.position="bottom",
+        legend.text = element_text(size=14))+
+  guides(fill = guide_legend(override.aes = list(size=14),nrow=2,title=""))
+
+myfile <- paste('plots/Supp_Figure_14b.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o)
+dev.off()      
+
+###########################################################
+# NK cells
+###########################################################   
+a <- which(allStates.mat$CellType=='NK_CD16_pos'| 
+             allStates.mat$CellType=='NK_CD16_neg' | 
+             allStates.mat$CellType=='NK_other')
+tmp <- allStates.mat[a,]
+
+my_colour <- list(
+  CellType=c(NK_CD16_pos=colors_all[10],
+             NK_CD16_neg=colors_all[11],
+             NK_other=colors_all[12]))
+
+myfile <- paste('plots/Supp_Figure_12.pdf',sep ='')
+
+rownames(tmp) <- tmp$ID2
+tmp2 <- tmp[,1:28]
+tmp2[tmp2 > quantile(as.matrix(tmp[,1:28]),0.99)] <- quantile(as.matrix(tmp[,1:28]),0.99)
+
+breaksList <- seq(0, 1.8, by = 0.2)
+
+pheatmap::pheatmap(tmp2[,1:28],
+                   cluster_cols = F,
+                   cluster_rows = F,
+                   filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 6,
+                   cutree_rows = 14,
+                   fontsize_row = 10,
+                   width=9,
+                   height=5.5,
+                   breaks = breaksList,
+                   color = brewer.pal(9,'Greys'),
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   gaps_row = c(5,13) )
+
+tmp2$CellType <- tmp$CellType
+combinedScaledHeatmaps <- rbind(combinedScaledHeatmaps,tmp2)
+
+a <- which(allAbundances$CellType=='NK_CD16_pos'| 
+             allAbundances$CellType=='NK_CD16_neg'| 
+             allAbundances$CellType=='NK_other' )
+tmp_abundance <- allAbundances[a,]
+sum_abundance <- tmp_abundance %>% 
+  group_by(ID2) %>% 
+  summarise(samples = sum(samples) )
+
+filtering_T <- 0.9
+#dd_Train <- computeCellTypeDistance(tmp[,1:23],colnames(tmp[1:23]) ,filtering_T)
+dd_Train <- matrix(-1,nrow = nrow(tmp),ncol = nrow(tmp))
+for(idx1 in 1:nrow(tmp)){
+  a <- tmp[idx1,1:28]
+  for(idx2 in 1:nrow(tmp)){
+    b <- tmp[idx2,1:28]
+    dd_Train[idx1,idx2] <- cor(unlist(a),unlist(b))
+  }
+}
+
+dd_Train[dd_Train<filtering_T] <- 0
+
+G.training <- igraph::graph_from_adjacency_matrix(dd_Train, weighted=TRUE,mode = "undirected")
+
+
+message("Running ForceAtlas2...")
+flush.console()
+G.training <- complete_forceatlas2(G.training, 
+                                   first.iter = 500000, 
+                                   overlap.method = 'repel', 
+                                   overlap.iter=10000,
+                                   ew.influence=10000,
+                                   kgrav=18)
+#obtain the vertex attributes
+G.training.attr <- vertex_attr(G.training)
+#the coordinates of the landmarks can be used for visualisation
+G.training.attr <- data.frame(x=G.training.attr$x,
+                              y=G.training.attr$y,
+                              Name=tmp$ID2,
+                              CellType=tmp$CellType)
+
+sum_abundance$Flag <- ''
+sum_abundance[sum_abundance$ID2=='NK_CD16_neg_s3' |
+                sum_abundance$ID2=='NK_CD16_neg_s8' |
+                sum_abundance$ID2=='NK_other_s4' 
+              ,'Flag'] <- '<100 cells'
+
+
+dr <- match(tmp$ID2,sum_abundance$ID2)
+V(G.training)$Name <- factor(tmp$ID,levels = paste('s',1:length(unique(tmp$ID)),sep=''))
+V(G.training)$CellType <- factor(tmp$CellType,levels = c('NK_CD16_pos','NK_CD16_neg','NK_other'))
+V(G.training)$Cells <- sum_abundance$Flag[dr]
+
+o <- ggraph(G.training) +
+  geom_edge_link(alpha=.4,edge_colour='black')+
+  geom_node_point(aes(fill=CellType),shape=21,size=15)+
+  geom_node_text(aes(label=Name),fontface='bold',size=8)+
+  geom_node_text(aes(filter=Cells=='<100 cells',label='<100'),size=8,lineheight=8,colour='red4')+
+  scale_fill_manual(values=colors_all[10:12])+
+  scale_color_brewer(palette='Set3')+
+  theme_graph(base_family = 'Helvetica') + 
+  theme(legend.position="bottom",
+        legend.text = element_text(size=14))+
+  guides(fill = guide_legend(override.aes = list(size=14),nrow=2,title=""))
+
+myfile <- paste('plots/Supp_Figure_14c.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o)
+dev.off()        
+
+###########################################################
+# Myelocytes cells
+###########################################################    
+
+a <- which(allStates.mat$CellType=='Monocytes_classical'| 
+             allStates.mat$CellType=='Monocytes_nonClassical' | 
+             allStates.mat$CellType=='DC'| 
+             allStates.mat$CellType=='DC_plasmocytoid'| 
+             allStates.mat$CellType=='Myelocytes_other')
+tmp <- allStates.mat[a,]
+
+my_colour <- list(
+  CellType=c(Monocytes_classical=colors_all[13],
+             Monocytes_nonClassical=colors_all[14],
+             DC=colors_all[15],
+             DC_plasmocytoid=colors_all[16],
+             Myelocytes_other=colors_all[17])
+)
+
+myfile <- paste('plots/Supp_Figure_13.pdf',sep ='')
+
+rownames(tmp) <- tmp$ID2
+tmp2 <- tmp[,1:28]
+tmp2[tmp2 > quantile(as.matrix(tmp[,1:28]),0.966)] <- quantile(as.matrix(tmp[,1:28]),0.966)
+
+breaksList <- seq(0, 1.8, by = 0.2)
+
+pheatmap::pheatmap(tmp2[,1:28],
+                   cluster_cols = F,
+                   cluster_rows = F,
+                   filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 6,
+                   cutree_rows = 14,
+                   fontsize_row = 10,
+                   width=9,
+                   height=5.5,
+                   breaks = breaksList,
+                   color = brewer.pal(9,'Greys'),
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   gaps_row = c(7,15,19,24) )
+
+tmp2$CellType <- tmp$CellType
+combinedScaledHeatmaps <- rbind(combinedScaledHeatmaps,tmp2)
+
+a <- which(allAbundances$CellType=='Monocytes_classical'| 
+             allAbundances$CellType=='Monocytes_nonClassical'| 
+             allAbundances$CellType=='DC'| 
+             allAbundances$CellType=='DC_plasmocytoid'| 
+             allAbundances$CellType=='Myelocytes_other')
+tmp_abundance <- allAbundances[a,]
+sum_abundance <- tmp_abundance %>% 
+  group_by(ID2) %>% 
+  summarise(samples = sum(samples) )
+
+filtering_T <- 0.9
+#dd_Train <- computeCellTypeDistance(tmp[,1:23],colnames(tmp[1:23]) ,filtering_T)
+dd_Train <- matrix(-1,nrow = nrow(tmp),ncol = nrow(tmp))
+for(idx1 in 1:nrow(tmp)){
+  a <- tmp[idx1,1:28]
+  for(idx2 in 1:nrow(tmp)){
+    b <- tmp[idx2,1:28]
+    dd_Train[idx1,idx2] <- cor(unlist(a),unlist(b))
+  }
+}
+
+dd_Train[dd_Train<filtering_T] <- 0
+
+G.training <- igraph::graph_from_adjacency_matrix(dd_Train, weighted=TRUE,mode = "undirected")
+message("Running ForceAtlas2...")
+flush.console()
+G.training <- complete_forceatlas2(G.training, 
+                                   first.iter = 500000, 
+                                   overlap.method = 'repel', 
+                                   overlap.iter=10000,
+                                   ew.influence=10000,
+                                   kgrav=18)
+#obtain the vertex attributes
+G.training.attr <- vertex_attr(G.training)
+#the coordinates of the landmarks can be used for visualisation
+G.training.attr <- data.frame(x=G.training.attr$x,
+                              y=G.training.attr$y,
+                              Name=tmp$ID2,
+                              CellType=tmp$CellType)
+
+sum_abundance$Flag <- ''
+sum_abundance[sum_abundance$ID2=='Monocytes_classical_s5' |
+                sum_abundance$ID2=='Monocytes_nonClassical_s1' |
+                sum_abundance$ID2=='Monocytes_nonClassical_s3' |
+                sum_abundance$ID2=='Monocytes_nonClassical_s7' |  
+                sum_abundance$ID2=='DC_s2' |
+                sum_abundance$ID2=='DC_s4' |
+                sum_abundance$ID2=='DC_plasmocytoid_s1' |
+                sum_abundance$ID2=='Myelocytes_other_s1'|
+                sum_abundance$ID2=='Myelocytes_other_s3'|
+                sum_abundance$ID2=='Myelocytes_other_s4'|
+                sum_abundance$ID2=='Myelocytes_other_s5'          
+              ,'Flag'] <- '<100 cells'
+
+dr <- match(tmp$ID2,sum_abundance$ID2)
+V(G.training)$Name <- factor(tmp$ID,levels = paste('s',1:length(unique(tmp$ID)),sep=''))
+V(G.training)$CellType <- factor(tmp$CellType,levels = c('Monocytes_classical','Monocytes_nonClassical',
+                                                         'DC','DC_plasmocytoid','Myelocytes_other'))
+V(G.training)$Cells <- sum_abundance$Flag[dr]
+
+o <- ggraph(G.training) +
+  geom_edge_link(alpha=.4,edge_colour='black')+
+  geom_node_point(aes(fill=CellType),shape=21,size=15)+
+  geom_node_text(aes(label=Name),fontface='bold',size=8)+
+  geom_node_text(aes(filter=Cells=='<100 cells',label='<100'),size=8,lineheight=8,colour='red4')+
+  scale_fill_manual(values=colors_all[13:17])+
+  scale_color_brewer(palette='Set3')+
+  theme_graph(base_family = 'Helvetica') + 
+  theme(legend.position="bottom",
+        legend.text = element_text(size=18))+
+  guides(fill = guide_legend(override.aes = list(size=14),nrow=2,title=""))
+
+myfile <- paste('plots/Supp_Figure_14d.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o)
+dev.off()        
+
+
+####################################################################################
+
+#make a heatmap of all states
+my_row_annot <- data.frame(CellType=combinedScaledHeatmaps$CellType)
+rownames(my_row_annot) <- rownames(combinedScaledHeatmaps)
+
+my_colour <- list(
+  CellType=c(CD4_Memory=colors_all[1],
+             CD4_Naive=colors_all[2],
+             CD8_Memory=colors_all[3],
+             CD8_Naive=colors_all[4],
+             T_DN=colors_all[5],
+             T_other=colors_all[6],
+             B_Memory=colors_all[7],
+             B_Naive=colors_all[8],
+             B_other=colors_all[9],
+             NK_CD16_pos=colors_all[10],
+             NK_CD16_neg=colors_all[11],
+             NK_other=colors_all[12],
+             Monocytes_classical=colors_all[13],
+             Monocytes_nonClassical=colors_all[14],
+             DC=colors_all[15],
+             DC_plasmocytoid=colors_all[16],
+             Myelocytes_other=colors_all[17]
+  )
+)
+
+
+myfile <- paste('/Home/siv32/dkl081/Desktop/RAMMS/paper_figure_codes/state_discovery_plots/cellular_states/allStates_heatmap.pdf',sep ='')
+
+pheatmap::pheatmap(combinedScaledHeatmaps[,1:28],
+                   cluster_cols = F,
+                   cluster_rows = F,
+                   filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 4,
+                   cutree_rows = 14,
+                   fontsize_row = 10,
+                   width = 8,
+                   height = 21,
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   color = brewer.pal(9,'Greys'),
+                   gaps_row = c(8,17,27,35,38,42,50,55,60,65,73,77,84,92,96,101) )  
+```
+
+### Compute fold changes in the abundance of cellular states within the discovery cohort.
+We use BL versus all time points up to 12 months after aHSCT
+
+```{r fold changes discovery cohort, echo=TRUE, cache=TRUE,eval=FALSE}
+
+#compute the fold changes first for the time points of the discovery cohort
+abundance_V4 <- allAbundances[allAbundances$Sample=='BL',]
+abundance_V5 <- allAbundances[allAbundances$Sample=='100d',]
+abundance_V6 <- allAbundances[allAbundances$Sample=='6m',]
+abundance_V7 <- allAbundances[allAbundances$Sample=='12m',]
+#concatenate the data
+tmp <- merge(abundance_V4,abundance_V5,by='ID2')
+tmp <- tmp[,c(1,5,11)]
+colnames(tmp)[2] <- 'V4'
+colnames(tmp)[3] <- 'V5'
+tmp <- merge(tmp,abundance_V6,by='ID2')
+tmp <- tmp[,c(1,2,3,7)]
+colnames(tmp)[4] <- 'V6'
+tmp <- merge(tmp,abundance_V7,by='ID2')
+tmp <- tmp[,c(1,2,3,4,8,9,10)]
+colnames(tmp)[5] <- 'V7'
+#compute fold changes
+foldChanges <- data.frame()
+for(idx in 1:nrow(tmp)){
+  
+  currentState <- tmp[idx,1]
+  valueV4 <- tmp[idx,2]
+  valueV5 <- tmp[idx,3]
+  valueV6 <- tmp[idx,4]
+  valueV7 <- tmp[idx,5]
+  ID <- tmp[idx,6]
+  cellType <- tmp[idx,7]
+  
+  dt <- data.frame(Celltype=cellType,
+                   ID=ID,
+                   CurrentState=currentState,
+                   LogV4V5=log2(valueV5/valueV4),
+                   LogV4V6=log2(valueV6/valueV4),
+                   LogV4V7=log2(valueV7/valueV4))
+  foldChanges <- rbind(foldChanges,dt)
+}
+
+#######################################################################################3
+#visualise the changes
+
+all_cellType_order <- c("CD4_Memory" ,"CD4_Naive" ,
+                        "CD8_Memory","CD8_Naive",
+                        "T_DN","T_other",
+                        "B_Memory" ,"B_Naive" ,'B_other',
+                        "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                        "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+
+colors_all <- c('slategray1','slategray3',
+                'steelblue1','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick4','indianred1',
+                'orange','orange3','peachpuff',
+                'palegreen3','palegreen1','lightgoldenrod3','lightgoldenrod1','greenyellow')
+
+foldChanges$Celltype <- factor(foldChanges$Celltype,levels = all_cellType_order)
+
+o1 <- ggplot(foldChanges) + aes(x=CurrentState,y=LogV4V5,color=Celltype,fill=Celltype,label=ID)+
+   geom_hline(yintercept = -1.25,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=3.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes 100d / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 10,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 8,face = 'bold'),
+          axis.title.x = element_text( size = 8,face = 'bold' ),
+          axis.title.y = element_text( size = 8,face = 'bold' ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+#ordered plot
+o1b <- ggplot(foldChanges) + aes(x=reorder(CurrentState,-LogV4V5),y=LogV4V5,color=Celltype,fill=Celltype,label=ID)+
+   geom_hline(yintercept = -2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=4.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylim(-6,6)+
+    ylab('Fold changes 100d / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 12,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 12,face = 'bold'),
+          axis.title.x = element_text( size = 12,face = 'bold' ),
+          axis.title.y = element_text( size = 12,face = 'bold' ),
+          strip.text = element_text(size = 12,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+myfile <- paste('plots/Supp_Figure_15a.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o1b)
+dev.off()
+
+o2 <- ggplot(foldChanges) + aes(x=CurrentState,y=LogV4V6,color=Celltype,fill=Celltype,label=ID)+
+    geom_hline(yintercept = -1.25,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=3.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes 6m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 10,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 10,face = 'bold'),
+          axis.title.x = element_text( size = 10,face = 'bold' ),
+          axis.title.y = element_text( size = 10,face = 'bold' ),
+          strip.text = element_text(size = 10,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+o2b <- ggplot(foldChanges) + aes(x=reorder(CurrentState,-LogV4V6),y=LogV4V6,color=Celltype,fill=Celltype,label=ID)+
+    geom_hline(yintercept = -2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=4.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylim(-6,6)+
+    ylab('Fold changes 6m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 12,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 12,face = 'bold'),
+          axis.title.x = element_text( size = 12,face = 'bold' ),
+          axis.title.y = element_text( size = 12,face = 'bold' ),
+          strip.text = element_text(size = 12,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+myfile <- paste('plots/Supp_Figure_15b.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o2b)
+dev.off()
+
+o3 <- ggplot(foldChanges) + aes(x=CurrentState,y=LogV4V7,color=Celltype,fill=Celltype,label=ID)+
+    geom_hline(yintercept = -1.25,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=3.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes 12m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 10,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 10,face = 'bold'),
+          axis.title.x = element_text( size = 10,face = 'bold' ),
+          axis.title.y = element_text( size = 10,face = 'bold' ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+o3b <- ggplot(foldChanges) + aes(x=reorder(CurrentState,-LogV4V7),y=LogV4V7,color=Celltype,fill=Celltype,label=ID)+
+    geom_hline(yintercept = -1.25,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=4.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylim(-6,6)+
+    ylab('Fold changes 12m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 12,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 12,face = 'bold'),
+          axis.title.x = element_text( size = 12,face = 'bold' ),
+          axis.title.y = element_text( size = 12,face = 'bold' ),
+          strip.text = element_text(size = 12,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+myfile <- paste('plots/Supp_Figure_15c.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o3b)
+dev.off()  
+
+#estimate the 10th and 90th quantiles over all fold changes from the comparisons --> this gives us the cutoffs for filtering
+dt <- c(foldChanges$LogV4V5,foldChanges$LogV4V6,foldChanges$LogV4V7)
+quantile(dt,probs = seq(0,1,0.05)) 
+
+#visualise all fold changes
+colnames(foldChanges)
+colnames(foldChanges)[4] <- '100d/BL'
+colnames(foldChanges)[5] <- '6m/BL'
+colnames(foldChanges)[6] <- '12m/BL'
+
+plotData <- data.frame(cellType=foldChanges$Celltype,
+                       currentState=foldChanges$CurrentState,
+                       BL=0,
+                       `100d`= foldChanges$`100d/BL`,
+                       `6m`= foldChanges$`6m/BL`,
+                       `12d`= foldChanges$`12m/BL`)
+
+#make summary plots to see things 
+myD <- 1
+for(myCellType in mySelectedCellTypes){
+  
+  tmp <- melt(plotData,id.vars = c('cellType','currentState'))
+  tmp <- tmp[tmp$cellType==myCellType,]
+  o1 <- ggplot(tmp) + aes(x=variable,y=value,fill=cellType,color=cellType)+
+    geom_hline(yintercept = -2,color='red',size=0.15,linetype='dashed')+
+    geom_hline(yintercept = 2,color='red',size=0.15,linetype='dashed')+
+    geom_point(size=1.5)+
+    geom_line(group=1,color='black',size=0.1)+
+    theme_bw()+
+    xlab('')+
+    ylab('Relative changes from BL (log2 scale)')+
+    facet_wrap(~currentState,scales = 'fixed')+
+    scale_color_manual(values=colors_all[myD])+
+    theme(axis.text.y = element_text( size = 8 ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 8),
+          axis.title.x = element_text( size = 8,face = 'bold' ),
+          axis.title.y = element_text( size = 8 ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.5)
+  
+  myD <- myD + 1
+  
+}
+
+#threshold for the lower 
+c1 <- quantile(dt,probs = seq(0,1,0.05))[3]
+#threshold for the higher 
+c2 <- quantile(dt,probs = seq(0,1,0.05))[19]
+
+#simple filtering 
+allFlags <- data.frame()
+for(idx in 1:nrow(foldChanges)){
+  flag <- 0
+  tmp <- foldChanges[idx,]
+  if( (tmp$`100d/BL` >=c2 | tmp$`100d/BL` <=c1) &  (tmp$`6m/BL` >=c2 | tmp$`6m/BL` <=c1) |
+      (tmp$`100d/BL` >=c2 | tmp$`100d/BL` <=c1) &  (tmp$`12m/BL` >=c2 | tmp$`12m/BL` <=c1) |
+      (tmp$`12m/BL` >=c2 | tmp$`12m/BL` <=c1) &  (tmp$`6m/BL` >=c2 | tmp$`6m/BL` <=c1)){
+    flag <- 1
+  }
+  dt <- data.frame(Flag=flag)
+  allFlags <- rbind(allFlags,dt)
+}
+foldChanges$Flag <- allFlags$Flag
+
+filterStates <- foldChanges[foldChanges$Flag==1,]
+#filter based on the number of cells from before <100 are excluded --> hard coded but i had to double check it manually
+fewCellsVector <- c('CD4_Naive_s1','CD4_Memory_s3','CD8_Memory_s1','CD8_Memory_s8','CD8_Naive_s7','CD8_Naive_s8','T_other_s3','B_Memory_s3','B_Naive_s3','B_Naive_s5','B_other_s1','B_other_s3','B_other_s4',
+                    'NK_CD16_neg_s3' ,'NK_CD16_neg_s8','NK_other_s4' ,'Monocytes_classical_s5','Monocytes_nonClassical_s1','Monocytes_nonClassical_s3','Monocytes_nonClassical_s7',
+                    'DC_s2','DC_s4','DC_plasmocytoid_s1' ,'Myelocytes_other_s1','Myelocytes_other_s3','Myelocytes_other_s4','Myelocytes_other_s5')
+
+a <- which(filterStates$CurrentState %in% fewCellsVector)
+filterStates <- filterStates[-a,]
+
+
+plotData <- data.frame(cellType=filterStates$Celltype,
+                       currentState=filterStates$CurrentState,
+                        BL=0,
+                       `t100d`= filterStates$`100d/BL`,
+                       `t6m`= filterStates$`6m/BL`,
+                       `t12d`= filterStates$`12m/BL`)
+
+tmp <- melt(plotData,id.vars = c('cellType','currentState'))
+
+tmp$cellType <- factor(tmp$cellType,levels = c('CD4_Memory','CD4_Naive',
+                                               'CD8_Memory','CD8_Naive',
+                                               'T_DN','T_other',
+                                               'B_Memory','B_Naive'))
+
+tmp$currentState <- factor(tmp$currentState,levels=c('CD4_Memory_s7',
+                                                     'CD4_Naive_s2','CD4_Naive_s3','CD4_Naive_s4','CD4_Naive_s6','CD4_Naive_s9',
+                                                     'CD8_Memory_s2','CD8_Memory_s6','CD8_Naive_s2','CD8_Naive_s3','CD8_Naive_s4',
+                                                     'CD8_Naive_s6','T_DN_s3','T_other_s4','B_Memory_s6','B_Memory_s8','B_Naive_s1'))
+
+o1 <- ggplot(tmp) + aes(x=variable,y=value,fill=cellType,color=cellType)+
+    geom_hline(yintercept = -1.25,color='red',size=0.15,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.15,linetype='dashed')+
+    geom_point(size=2.4)+
+  geom_text(aes(label=round(value,1)),position = position_identity(),vjust = -1,size=3,color='black')+
+    geom_line(group=1,color='black',size=0.1)+
+     facet_wrap(~currentState,ncol=6,scales = 'fixed')+
+     theme_clean() +
+    xlab('')+
+  ylim(-6,+6)+
+    ylab('Relative changes from BL (log2 scale)')+
+    scale_fill_manual(values = colors_all[1:8])+
+    scale_color_manual(values = colors_all[1:8])+
+    theme(axis.text.y = element_text( size = 8 ),
+          axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 8),
+          axis.title.x = element_blank(),
+          axis.title.y = element_text( size = 8 ),
+          strip.text = element_text(size = 10,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.8)
+
+  myfile <- paste('plots/Figure_5A.pdf',sep ='')
+  pdf(myfile,width = 10,height = 8)
+  print(o1)
+  dev.off()
+
+```
+
+### Predict and estimate cellular state abundances in unseen data
+Here we use the validation cohort that is totally unseen from the discovery cohort. We predict the cellular states found in the discovery cohort using LDA similar to what we did for the discovery cohort.
+
+```{r screen functional states batch2 , echo=TRUE, cache=TRUE,eval=FALSE}
+#colors for time points of the discovery cohort 
+color_TimePoints <- c('gray48',
+                      "rosybrown4"
+)  
+
+#load the cells from the validation cohort
+load('allLymphocytes_annotated.RDa')
+#take out the rest of cells from the discovery cohort
+allCells <- allCells[allCells$Sample=='24m'| allCells$Sample=='HC', ]
+
+all_cellType_order <- c("CD4_Memory" ,"CD4_Naive" ,
+                        "CD8_Memory","CD8_Naive",
+                        "T_DN","T_other",
+                        "B_Memory" ,"B_Naive" ,'B_other',
+                        "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                        "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+mySelectedCellTypes <- all_cellType_order
+colors_all <- c('slategray1','slategray3',
+                'steelblue1','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick4','indianred1',
+                'orange','orange3','peachpuff',
+                'palegreen3','palegreen1','lightgoldenrod3','lightgoldenrod1','greenyellow')
+
+#make a small change in the name of the markers otherwise the code will crush...
+colnames(allCells)[23] <- 'HLADR'
+timePointsOfInterest <-  c('HC','24m')
+
+allAbundances_validation <-data.frame()
+allStates.mat <- data.frame()
+myFigureList <- list()
+
+summaryCellsStates <- data.frame()
+corrAgree <- data.frame()
+corrDisagree <- data.frame()
+
+myC <- 1
+for(idx in 1:length(mySelectedCellTypes)){
+  
+  idx
+  myCelltype <- mySelectedCellTypes[idx]
+   myfile <- paste('FlowSOM_allData_states_',myCelltype,'.RDa',sep ='')
+  load(myfile) 
+  
+  myMarkers <- colnames(data_df_test)[1:28]
+  
+  #prepare the data for modelling using the lda.model
+  myCellTypeData <- allCells[allCells$CellType==myCelltype, ]
+  
+  A <- predict(lda.model1,myCellTypeData[,myMarkers])
+  myCellTypeData$pop_labels <- A$class
+  posteriors <- as.matrix(apply(A$posterior,1,max))
+  plot(density(posteriors))
+  #filter the data based on prob
+  idx1 <- which(posteriors>0.6)
+  myCellTypeData <- myCellTypeData[idx1,]
+  myCellTypeData$ID  <- paste(myCelltype,'_s',myCellTypeData$pop_labels,sep='') 
+  
+  #compute the correlation with the training set
+  #######################################################################################
+  stateNumberTest <- length(unique(myCellTypeData$pop_labels))
+  stateNumberTrain <- length(unique(data_df_train$pop_labels))
+
+  myMarkers <- colnames(data_df_train)[c(1:28)]
+
+  myMatrix <- matrix(-1,nrow=stateNumberTest,ncol=stateNumberTrain)
+  numCells <- matrix(-1,nrow=stateNumberTrain,ncol=1)
+  for(i in 1:stateNumberTest){
+  
+    tmp_testData <- myCellTypeData[myCellTypeData$pop_labels==i,myMarkers]
+    mean_testData <- colMeans(tmp_testData)
+    for(j in 1:stateNumberTrain){
+        tmp_trainData <- data_df_train[data_df_train$pop_labels==j,1:28]
+        mean_trainData <- colMeans(tmp_trainData)
+        myMatrix[i,j] <- cor(mean_testData,mean_trainData)
+        numCells[j,1] <- nrow(tmp_trainData)
+        #skip the cases where we have few cells
+        if(nrow(tmp_trainData)>=100){
+      
+          if(i==j){
+              a1 <- data.frame(State=j,
+                         CellType=myCelltype,
+                         Corr=cor(mean_testData,mean_trainData))
+              corrAgree <- rbind(corrAgree,a1)
+          }else{
+              a2 <- data.frame(State_i=i,
+                         State_j=j,
+                         CellType=myCelltype,
+                         Corr=cor(mean_testData,mean_trainData))
+              corrDisagree <- rbind(corrDisagree,a2)
+          }
+      }
+    }
+  }
+      dt <- data.frame(State=1:stateNumberTrain,
+                 numCells,
+                 CellType=myCelltype)
+
+      summaryCellsStates <- rbind(summaryCellsStates,dt)
+  
+  #######################################################################################
+  A <- as.numeric(A$class)
+  ## generate a heatmap showing the expression for each cluster
+  heat_mat_test <- matrix(NA, nrow = max(A), ncol = length(myMarkers))
+  for(i in 1: max(A)) {
+    a <- which(myCellTypeData$pop_labels==i)
+    temp_mat <- myCellTypeData[a,myMarkers]
+    heat_mat_test[i,] <- as.matrix(apply(temp_mat, 2, function (x) mean(x, na.rm = T)))
+  }
+  rownames(heat_mat_test) <- paste("cluster", 1:max(A), sep = "")
+  colnames(heat_mat_test) <- myMarkers
+  
+  #first concatenate the heatmap with all states
+  heat_mat_test <- as.data.frame(heat_mat_test)
+  heat_mat_test$CellType <- myCelltype
+  heat_mat_test$ID <- paste(myCelltype,'_s',1:nrow(heat_mat_test),sep='')
+  rownames(heat_mat_test) <- heat_mat_test$ID
+  allStates.mat <- rbind(allStates.mat,heat_mat_test)
+  
+  myAbundance <- myCellTypeData %>% 
+    group_by(Sample,pop_labels) %>% 
+    summarise(samples = n()) %>%
+    mutate(n=samples/sum(samples))
+  
+  pop_labels <- as.numeric(myAbundance$pop_labels)
+  
+  myAbundance <- as.data.frame(myAbundance)
+  myAbundance$Sample <- factor(myAbundance$Sample,levels = timePointsOfInterest)
+  myAbundance$pop_labels <- factor(myAbundance$pop_labels,levels = c(1:max(pop_labels)))
+  myAbundance$ID <- paste('s',myAbundance$pop_labels,sep='') 
+  myAbundance$ID2 <- paste(myCelltype,'_s',myAbundance$pop_labels,sep='')
+  myAbundance$CellType <- myCelltype
+  allAbundances_validation <- rbind(allAbundances_validation,myAbundance)
+  myC <- myC + 1
+  
+}
+
+corrAgree$Status <- 'Predicted'
+corrDisagree$Status <- 'nonPredicted'
+colnames(corrDisagree)[2] <- 'State'
+
+corrDisagree$State <- 0
+
+tmp <- rbind(corrAgree[,1:4],corrDisagree[,2:5])
+tmp$CellType <- factor(tmp$CellType,levels = all_cellType_order)
+tmp$Status <- factor(tmp$Status,levels = c('Predicted','nonPredicted'))
+tmp$State <- factor(tmp$State,levels=0:10)
+
+myPalete <- c('gray',"#FEE6CE","#FDAE6B","#D94801","#FDE0EF","#9E9AC8", "#54278F","#C6DBEF","#4292C6", "#084594",'khaki3') 
+
+
+corr_sanityTest <- ggplot(tmp, aes(x = Status, y = Corr, color=State,fill = CellType)) +
+  geom_jitter(height=0,width=0.2, size=2,alpha=0.8)+
+  geom_boxplot(width=0.1,
+               alpha=0.3,
+               size=0.25,
+               outlier.colour = "black",
+               outlier.shape = NA,
+               outlier.fill = "red",
+               outlier.size = 0.05,
+               notch = FALSE,color='black')+
+  facet_wrap(~CellType,scales='free_y',nrow=4)+
+  theme_clean() +
+  #ylim(0.5,1)+
+  scale_color_manual(values = myPalete)+
+  scale_fill_manual(values = colors_all)+
+  theme(axis.text.y = element_text( size = 12 ),
+        axis.text.x = element_text(angle = 90, vjust = 0.05, hjust = 0.95, size = 12),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        strip.text = element_text(size = 12,face='bold',lineheight=1),
+        legend.position = "none",aspect.ratio = 0.8)
+
+myfile <- paste('plots/Supp_Figure_16.pdf',sep ='')
+pdf(myfile, width = 8, height = 10)
+print(corr_sanityTest)
+dev.off()
+
+tmp <- allAbundances[allAbundances$Sample=='BL',]
+
+plotData <- rbind(allAbundances_validation,tmp)
+plotData$CellType <- factor(plotData$CellType,levels=all_cellType_order)
+plotData$Sample <- factor(plotData$Sample,levels = c('BL','HC','24m'))
+
+myPalete <- c("#FEE6CE","#FDAE6B","#D94801","#FDE0EF","#9E9AC8", "#54278F","#C6DBEF","#4292C6", "#084594",'khaki3') 
+#visualise the abundance of cellular states per cell type 
+plotData$ID <- factor(plotData$ID,levels =  paste('s',c(1:length(unique(plotData$ID))),sep='') )
+plotData$CellType <- factor(plotData$CellType, levels=all_cellType_order)
+
+o <- ggplot(plotData) + aes(x=Sample,y=n,fill=ID)+
+  geom_bar(stat='identity',position='stack',width = 0.48,alpha=1,color='black',size=0.15)+
+  #geom_hline(yintercept = 0.25,color='red',size=0.25)+
+  #geom_hline(yintercept = 0.875,color='red',size=0.25)+
+  facet_wrap(~CellType,scales='free_y',nrow=4)+
+  #geom_text(aes(y = n, label = ID), position = position_stack(vjust = 0.5),color = "black", size=2)+
+  theme_clean()+
+  ylab('Relative abundance')+
+  xlab('Distinct cellular states per cell type')+
+  theme(axis.text.y = element_text( size = 8 ),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 8),
+        axis.title.x = element_text( size = 8,face = 'bold' ),
+        axis.title.y = element_text( size = 8 ),
+        strip.text = element_text(size = 8,face='bold',lineheight=1),
+        legend.position = "bottom",aspect.ratio = 0.8)+
+  scale_fill_manual(values=myPalete)+
+  guides(fill = guide_legend(override.aes = list(size=1.5),nrow=2,title=""))
+
+myfile <- paste('plots/Figure_5B.pdf',sep ='')
+pdf(myfile)
+print(o)
+dev.off()
+
+```
+
+## Summarise the results from the validation cohort and generate some plots
+
+```{r combine the new data and visualise, echo=TRUE, cache=TRUE,eval=FALSE}
+
+abundance_24m <- allAbundances_validation[allAbundances_validation$Sample=='24m',]
+abundance_HC <- allAbundances_validation[allAbundances_validation$Sample=='HC',]
+
+abundance_24m_cells <- data.frame(Sample=abundance_24m$Sample,
+                                  Cells=abundance_24m$samples,
+                                  ID2=abundance_24m$ID2,
+                                  CellType=abundance_24m$CellType)
+
+abundance_HC_cells <- data.frame(Sample=abundance_HC$Sample,
+                                  Cells=abundance_HC$samples,
+                                  ID2=abundance_HC$ID2,
+                                  CellType=abundance_HC$CellType)
+
+#concatenate the number of cells
+tmp <- merge(abundance_V4,abundance_24m_cells,by='ID2')
+tmp <- tmp[,c(1,4,9)]
+colnames(tmp)[2] <- 'BL'
+colnames(tmp)[3] <- '24m'
+
+tmp <- merge(tmp,abundance_HC_cells,by='ID2')
+tmp <- tmp[,c(1,2,3,5)]
+colnames(tmp)[4] <- 'HC'
+
+numberOfCells_part2 <- tmp
+
+#concatenate the ratios
+tmp <- merge(abundance_V4,abundance_24m,by='ID2')
+tmp <- tmp[,c(1,5,11)]
+colnames(tmp)[2] <- 'BL'
+colnames(tmp)[3] <- '24m'
+
+tmp <- merge(tmp,abundance_HC,by='ID2')
+tmp <- tmp[,c(1,2,3,7,8,9)]
+colnames(tmp)[4] <- 'HC'
+
+#compute fold changes over the ratios
+foldChanges_part2 <- data.frame()
+for(idx in 1:nrow(tmp)){
+  
+  currentState <- tmp[idx,1]
+  valueV4 <- tmp[idx,2]
+  value24m <- tmp[idx,3]
+  valueHC <- tmp[idx,4]
+  ID <- tmp[idx,5]
+  cellType <- tmp[idx,6]
+  
+  dt <- data.frame(Celltype=cellType,
+                   ID=ID,
+                   CurrentState=currentState,
+                   LogV4m24=log2(value24m/valueV4),
+                   LogV4HC=log2(valueHC/valueV4))
+  foldChanges_part2 <- rbind(foldChanges_part2,dt)
+}
+
+foldChanges_part2$Celltype <- factor(foldChanges_part2$Celltype,levels = all_cellType_order)
+
+o1 <- ggplot(foldChanges_part2) + aes(x=CurrentState,y=LogV4m24,color=Celltype,fill=Celltype,label=ID)+
+   geom_hline(yintercept = -1.25,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 1.97,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=3.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes 24m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 10,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 8,face = 'bold'),
+          axis.title.x = element_text( size = 8,face = 'bold' ),
+          axis.title.y = element_text( size = 8,face = 'bold' ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+o1b <- ggplot(foldChanges_part2) + aes(x=reorder(CurrentState,-LogV4m24),y=LogV4m24,color=Celltype,fill=Celltype,label=ID)+
+   geom_hline(yintercept = -2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=4.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes 24m / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 12,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 12,face = 'bold'),
+          axis.title.x = element_text( size = 12,face = 'bold' ),
+          axis.title.y = element_text( size = 12,face = 'bold' ),
+          strip.text = element_text(size = 12,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+myfile <- paste('plots/Supp_Figure_18.pdf',sep ='')
+pdf(myfile,width = 20,height = 7.5)
+print(o1b)
+dev.off()
+
+o1b <- ggplot(foldChanges_part2) + aes(x=reorder(CurrentState,-LogV4HC),y=LogV4HC,color=Celltype,fill=Celltype,label=ID)+
+   geom_hline(yintercept = -2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 2,color='red',size=0.25,linetype='dashed')+
+    geom_hline(yintercept = 0,color='black',size=0.25,linetype='dashed')+
+    geom_point(size=4.5)+
+    geom_text(aes(label=ID),position = position_identity(),vjust = -1,size=3,color='black')+
+    #geom_line(group=1,color='gray44',size=0.15)+
+    theme_clean()+
+    xlab('')+
+    ylab('Fold changes HC / BL (log2 scale)')+
+    scale_color_manual(values=colors_all)+
+    scale_fill_manual(values=colors_all)+
+    theme(axis.text.y = element_text( size = 12,face = 'bold' ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 12,face = 'bold'),
+          axis.title.x = element_text( size = 12,face = 'bold' ),
+          axis.title.y = element_text( size = 12,face = 'bold' ),
+          strip.text = element_text(size = 12,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.25)
+
+
+#same as in the discovery cohort estimate all differences in the validation cohort
+dt <- c(foldChanges_part2$LogV4m24,foldChanges_part2$LogV4HC)
+quantile(dt,probs = seq(0,1,0.05))
+
+#threshold for the lower values for the validation cohort, but in the paper we use the cutoffs from the discovery cohort since more differences were computed and thus might have better statistical power
+c3 <- quantile(dt,probs = seq(0,1,0.05))[3]
+#threshold for the higher values
+c4 <- quantile(dt,probs = seq(0,1,0.05))[19]
+
+#visualise all fold changes
+colnames(foldChanges_part2)
+colnames(foldChanges)[4] <- '24m/BL'
+colnames(foldChanges)[5] <- 'HC/BL'
+
+plotData <- data.frame(cellType=foldChanges_part2$Celltype,
+                       currentState=foldChanges_part2$CurrentState,
+                       BL=0,
+                       `24m`= foldChanges_part2$LogV4m24,
+                       `HC`= foldChanges_part2$LogV4HC)
+
+promptStates <- filterStates$CurrentState
+a <- which(plotData$currentState %in% promptStates)
+plotData <- plotData[a,]
+
+colnames(numberOfCells_part2)[1] <- 'currentState'
+tmp <- merge(plotData,numberOfCells_part2,by='currentState')
+
+
+tmp <- melt(plotData,id.vars = c('cellType','currentState'))
+tmp$cellType <- factor(tmp$cellType,levels = c('CD4_Memory','CD4_Naive',
+                                               'CD8_Memory','CD8_Naive',
+                                               'T_DN','T_other',
+                                               'B_Memory','B_Naive'))
+tmp$currentState <- factor(tmp$currentState,levels=c('CD4_Memory_s7',                                           'CD4_Naive_s2','CD4_Naive_s3','CD4_Naive_s4','CD4_Naive_s6','CD4_Naive_s9',                                                  'CD8_Memory_s2','CD8_Memory_s6','CD8_Naive_s2','CD8_Naive_s3','CD8_Naive_s4','CD8_Naive_s6','T_DN_s3','T_other_s4','B_Memory_s6','B_Memory_s8','B_Naive_s1'))
+
+o1 <- ggplot(tmp) + aes(x=variable,y=value,fill=cellType,color=cellType)+
+  geom_hline(yintercept = -1.25,color='red',size=0.15,linetype='dashed')+
+  geom_hline(yintercept = 1.97,color='red',size=0.15,linetype='dashed')+
+  geom_point(size=3,shape=15)+
+  geom_text(aes(label=round(value,2)),position = position_identity(),vjust = -1,size=3,color='black')+
+  facet_wrap(~currentState,ncol=6,scales = 'fixed')+
+  theme_clean() +
+  xlab('')+
+  ylim(-8,8)+
+  ylab('Validation cohort - Relative changes from BL (log2 scale)')+
+  scale_fill_manual(values = colors_all[1:8])+
+  scale_color_manual(values = colors_all[1:8])+
+  theme(axis.text.y = element_text( size = 8 ),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 8),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text( size = 8 ),
+        strip.text = element_text(size = 8,face='bold',lineheight=1),
+        legend.position = "none",aspect.ratio = 0.8)
+
+myfile <- paste('plots/Figure_5B.pdf',sep ='')
+  pdf(myfile,width = 10,height = 7)
+  print(o1)
+  dev.off()
+  
+```
+

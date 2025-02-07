@@ -1,0 +1,628 @@
+---
+title: "High dimensional immune profiling following aHSCT in MS - PART1"
+author: "Dimitrios Kleftogiannis"
+date: "2024-8-30"
+output: html_document
+---
+
+### Utility
+
+The data interpretation is performed in collaboration with **Dr. Sonia Gavasso and Jonas Haugsøen**. 
+
+The utility of this code is to load the processed data and generate visualisations that correspond to Figure 1-3 of the manuscript.
+
+### Contact
+
+Comments and bug reports are welcome, please email: Dimitrios Kleftogiannis (dimitrios.kleftogiannis@uib.no)
+
+We are also interested to know about how you have used our source code, including any improvements that you have implemented.
+ 
+You are free to modify, extend or distribute our source code, as long as our copyright notice remains unchanged and included in its entirety. 
+
+### License
+
+This code is licensed under the MIT License.
+
+Copyright 2024, University of Bergen (UiB) and Neuro-SysMed, Norway
+
+
+### Loading packages 
+First we load the packages required for the analysis.
+
+```{r load packages, echo=FALSE, eval=FALSE, error=TRUE, warning=FALSE,cache=TRUE}
+# set global chunk options
+# load libraries
+library(RColorBrewer)
+library(gplots) 
+library(ggplot2)
+library(gdata)
+library(gridExtra)
+library(grid)
+library(reshape2)
+library(ggthemes)
+library(ggpubr)
+library(dplyr)
+library(umap)
+library(ComplexHeatmap)
+library(ConsensusClusterPlus)
+library(readxl)
+library(igraph)
+library(matrixStats)
+library(ggforce)
+library(ggraph)
+library(ggridges)
+```
+
+### Initialise working directory and load in-house functions
+```{r initialise workspace,cache=TRUE,echo=FALSE}
+
+setwd("/Home/siv32/dkl081/Desktop/RAMMS/code_repo")
+```
+
+### Specify the markers of interest in the antibody panel
+```{r specify marker names,cache=TRUE,echo=FALSE}
+#all markers
+col.names <- c("CD16","CD4","CD14","CD19","CD3","CD235ab","CD11c","CD33",
+               "CD133","CD123","CD162","CD185","CD45RA","CD278","CD194","CD161",
+               "CD184","CD27","CD44","CD127","CD10","CD73","HLADR","CD146",
+               "CD117","CD8a","CD34","CD105","CD49d","CD20","CD25","CD66b",
+               "CD49f","CD45RO","CD90","CD45","CD195","CD38","CD196","CD135","CD56")
+col.names
+
+
+col.names.info <- c('type','type','type','type','type','state','type','type',
+                    'state','type','state','state','type','state','state','state',
+                    'state','state','state','state','state','state','type','state',
+                    'state','type','type','state','state','type','state','type',
+                    'state','type','state','type','state','type','state','state','type')
+
+#define the marker_info
+marker_info <- data.frame(Channel=NA,
+                          marker_name=col.names,
+                          marker_class=col.names.info)
+
+```
+
+
+### Generate summary plot showing the total number of cells found in the cohort (all patients and all time points)
+
+```{r generate plots withg absolute number of cells, cache=TRUE,echo=FALSE}
+
+#eliminate scientific notation
+options(scipen = 999)
+
+#colors for the time points 
+color_TimePoints <- c('gray48',
+                      "deepskyblue2",
+                      "magenta2",
+                      "indianred2",
+                      "rosybrown2",
+                      "rosybrown4")
+
+TimePointLevels <- c('HC','BL','100d','6m','12m','24m')
+
+#colors for the cell types
+colors_all <- c('slategray1','slategray3',
+                'steelblue1','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick4','indianred1',
+                'orange','orange3','peachpuff',
+                'palegreen3','palegreen1','lightgoldenrod3','lightgoldenrod1','greenyellow')
+
+#load the annotated data
+load('/Home/siv32/dkl081/Desktop/RAMMS/code_repo/allLymphocytes_annotated.RDa')
+
+#total number of cells in the cohort
+timePointCells <- allCells %>% 
+  group_by(Sample) %>% 
+  summarise(Cells = n())
+
+timePointCells$Sample <- factor(timePointCells$Sample,levels = TimePointLevels)
+
+str <- paste('Number of lymphocytes',sep='')
+o1 <- ggplot(timePointCells) + aes(x=Sample,y=Cells,fill=Sample)+
+  geom_bar(stat='identity',width = 0.38,alpha=1,color='black',size=0.2)+
+  ylab(str)+
+  theme_bw()+
+  scale_fill_manual(values = color_TimePoints)+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 16),
+        axis.text.y = element_text(size = 12),
+        axis.text.x = element_text(angle = 0, hjust = 0.5, size = 12),
+        axis.title.x = element_blank(),aspect.ratio = 0.5)
+
+myfile <- paste('plots/Number_of_lymphocytes.pdf',sep ='')
+pdf(myfile)
+print(o1)
+dev.off()
+
+
+#plot the number of cells per cell type
+  timePointCellType <- allCells%>% 
+  group_by(CellType,Sample) %>% 
+  summarise(samples = n())
+
+#fix the order of cell types in the plot
+all_cellType_order <- c("CD4_Memory" ,"CD4_Naive" ,
+                        "CD8_Memory","CD8_Naive",
+                        "T_DN","T_other",
+                        "B_Memory" ,"B_Naive" ,'B_other',
+                        "NK_CD16_pos", "NK_CD16_neg", "NK_other",
+                        "Monocytes_classical", "Monocytes_nonClassical", "DC","DC_plasmocytoid","Myelocytes_other")
+
+timePointCellType$CellType <- factor(timePointCellType$CellType,levels = all_cellType_order)
+timePointCellType$Sample <- factor(timePointCellType$Sample,levels = TimePointLevels)
+
+str <- paste('Number of cells',sep='')
+o2 <- ggplot(timePointCellType) + aes(x=CellType,y=samples,fill=CellType)+
+  geom_bar(stat='identity',width = 0.28,size=0.2,alpha=1,color='black',size=0.2)+
+  facet_wrap(~ Sample, scales = "free_y", nrow = 3)+
+  ylab(str)+
+  theme_bw()+
+  scale_fill_manual(values = colors_all)+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.text.x = element_text(angle = 90, size = 12,hjust = 0.95,vjust = 0.5),
+        axis.title.x = element_blank(),aspect.ratio = 0.5)
+
+myfile <- paste('plots/Supp_Figure_7.pdf',sep ='')
+pdf(myfile)
+print(o2)
+dev.off()
+
+```
+
+### Relative abundance of lymphocyte cell populations in the cohort
+```{r generate plots withg relative abundance,cache=TRUE,echo=FALSE}
+
+#redo the plot total number of cells per cell population
+timePointCellTypeFreq <- allCells %>% 
+  group_by(Sample,CellType) %>% 
+  summarise(cells = n())%>% 
+  mutate(freq = cells/sum(cells))
+
+timePointCellTypeFreq$CellType <- factor(timePointCellTypeFreq$CellType,levels = all_cellType_order)
+timePointCellTypeFreq$Sample <- factor(timePointCellTypeFreq$Sample,levels = TimePointLevels)
+
+str <- paste('Relative abundance',sep='')
+
+relative_abundance_all <- ggplot(timePointCellTypeFreq) + aes(x=Sample,y=freq,fill=CellType)+
+  geom_bar(stat='identity',width = 0.58,alpha=1,color='black',size=0.2)+
+  ylab(str)+
+  theme_bw()+
+  theme(axis.text.y = element_text( size = 12 ),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5, size = 12),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text( size = 12,face = 'bold' ),
+        strip.text = element_text(size = 12,face='bold',lineheight=1),
+        legend.position = "bottom",aspect.ratio = 0.8)+
+  scale_fill_manual(values = colors_all)+
+  guides(fill = guide_legend(override.aes = list(size=2.8),nrow=3,title=""))
+
+myfile <- paste('plots/Figure_2D.pdf',sep ='')
+pdf(myfile)
+print(relative_abundance_all)
+dev.off()
+
+```
+
+
+### Perform PCA using the annotated populations
+In Supp_Figure_8 of the paper we show the PCA analysis at the patient level. 
+Here for security and privacy reasons, we use anonymised the data and thus it is not possible to provide the code that generates the original figure shown in the paper. 
+Please contact the authors to request the original data if needed. 
+```{r perform PCA, echo=FALSE, cache=TRUE,eval=FALSE}
+
+
+
+```
+
+### Load pre-computed UMAP and visualise the populations
+The UMAP found in the paper is generated using randomly subsampled cells from all patients in the cohort. However here we use anonymised data and thus it is impossible to reproduce the subsampling prodecure. 
+Instead we provide pre-computed umap results without revealing personal identifiers of patients.
+
+```{r visualiose UMAP results, echo=FALSE, cache=TRUE,eval=TRUE}
+
+#load the pre-computed data
+myfile <- paste('/Home/siv32/dkl081/Desktop/RAMMS/code_repo/anonymised_subsampled_data.RDa',sep ='')
+load(myfile)
+
+myfile <- paste('/Home/siv32/dkl081/Desktop/RAMMS/code_repo/umap_coordinates.RDa',sep ='')
+load(myfile)
+
+#markers to use for UMAP inspection
+col.names <- c("CD16","CD4","CD14","CD19","CD3","CD235ab","CD11c","CD33",
+               "CD133","CD123","CD162","CD185","CD45RA","CD278","CD194","CD161",
+               "CD184","CD27","CD44","CD127","CD10","CD73","HLADR","CD146",
+               "CD117","CD8a","CD34","CD105","CD49d","CD20","CD25","CD66b",
+               "CD49f","CD45RO","CD90","CD45","CD195","CD38","CD196","CD135","CD56")
+
+#generate the data for umap
+data_umap_clust <- data_sub[ , col.names]
+data_umap_clust$UMAP1 <- umap$UMAP1
+data_umap_clust$UMAP2 <- umap$UMAP2
+data_umap_clust$TimePoint <- data_sub$Sample
+data_umap_clust$labels <- data_sub$CellType
+
+data_umap_clust$labels <- factor(data_umap_clust$labels,levels = all_cellType_order )
+
+umap_clust <- ggplot(data_umap_clust, aes(x = UMAP1, y = UMAP2, color = labels)) +
+  geom_point(size = .1) +
+  coord_fixed(ratio = 1) +
+  theme_bw()+
+  scale_color_manual(values = colors_all) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.position = "bottom",
+        legend.background = element_rect())+
+  guides(colour = guide_legend(override.aes = list(size=3), title=""))
+
+
+myfile <- paste('plots/Figure_2B.pdf',sep ='')
+pdf(myfile)
+print(umap_clust)
+dev.off()
+
+data_umap_clust$TimePoint <- factor(data_umap_clust$TimePoint,levels = TimePointLevels)
+umap_time <- ggplot(data_umap_clust, aes(x = UMAP1, y = UMAP2, color = TimePoint)) +
+  geom_point(size = 0.05) +
+  coord_fixed(ratio = 1) +
+  scale_color_manual(values=color_TimePoints)+
+  facet_wrap(~ TimePoint, ncol = 2) +
+  theme_bw() +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.position = "bottom",aspect.ratio = 0.8)+
+  guides(color = guide_legend(override.aes = list(size=3),nrow=1,title=""))
+
+myfile <- paste('plots/UMAP_by_timePoints.pdf',sep ='')
+pdf(myfile)
+print(umap_time)
+dev.off()
+
+
+#plot the expression of markers overlaid to UMAP
+color_grad_flow2 <- c("#331820", "#4d4f55", "#55626b", "#5a767e", "#628b8a", "#709b91", "#82aa96", "#98b89a", "#b0c6a2", "#c9d3ab", "#e4e0b6", "#feedc3")
+
+image_list <- list()
+myC <- 1
+for(idx in col.names){
+  
+  tmp <- data_sub[ ,idx]
+  tmp <- as.data.frame(tmp)
+  data_dimred_samples <- cbind(tmp, umap)
+  a <- data_sub$Sample
+  #a <- as.vector(a$Sample)
+  data_dimred_samples$Sample <- factor(a,levels = TimePointLevels)
+  colnames(data_dimred_samples)[1] <- 'marker'
+  o <- ggplot(data_dimred_samples, aes(x = UMAP1, y = UMAP2, color = marker)) +
+    geom_point(size = 0.05) +
+    coord_fixed(ratio = 1)+
+    ggtitle(idx)+
+    scale_colour_gradientn(colours = color_grad_flow2, limits = c(0,1.5),name=idx) +
+    facet_wrap(~ Sample, ncol = 3) +
+    theme_bw() +
+    theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank(),
+          legend.position = "bottom",aspect.ratio = 0.8)
+  rm(tmp)
+  image_list[[myC]] <- o
+  myC <- myC + 1
+}
+
+myfile <- paste('plots//UMAP_overlaid_markers.pdf',sep ='')
+pdf(myfile,onefile = T)
+print(image_list)
+dev.off()
+
+```
+
+### Generate and visualise heatmap with mean expression of the annotated populations
+```{r generate and visualise heatmap, echo=FALSE, cache=TRUE,eval=TRUE}
+
+#here we pass the cell-type identify markers used for annotation
+clustering_cols <- c("CD3","CD4","CD8a","CD45RA","CD45RO",
+                     "CD20","CD19","CD27",'CD117',
+                     "CD56",
+                     "CD127","CD34","CD38",
+                     "CD16","CD14","CD11c","CD123","CD33")
+
+# make heatmap of the annotated populations
+heat_mat <- matrix(NA, nrow = length(all_cellType_order), ncol = length(clustering_cols))
+myC <- 1
+for(i in all_cellType_order) {
+  temp_mat <- allCells[allCells$CellType == i, clustering_cols]
+  heat_mat[myC,] <- as.matrix(apply(temp_mat, 2, function (x) mean(x, na.rm = T)))
+  myC <- myC + 1
+}
+
+rownames(heat_mat) <- all_cellType_order
+colnames(heat_mat) <- clustering_cols
+
+# plot heatmap of expression
+breaks <- seq(0, 1, by = 0.05)
+white.black <- colorRampPalette(c("white", "black"))(n = 20)
+
+#make a heatmap of all states
+my_row_annot <- data.frame(CellType=rownames(heat_mat))  
+rownames(my_row_annot) <- rownames(heat_mat)
+my_colour <- list(
+  CellType=c(CD4_Memory=colors_all[1],
+             CD4_Naive=colors_all[2],
+             CD8_Memory=colors_all[3],
+             CD8_Naive=colors_all[4],
+             T_DN=colors_all[5],
+             T_other=colors_all[6],
+             B_Memory=colors_all[7],
+             B_Naive=colors_all[8],
+             B_other=colors_all[9],
+             NK_CD16_pos=colors_all[10],
+             NK_CD16_neg=colors_all[11],
+             NK_other=colors_all[12],
+             Monocytes_classical=colors_all[13],
+             Monocytes_nonClassical=colors_all[14],
+             DC=colors_all[15],
+             DC_plasmocytoid=colors_all[16],
+             Myelocytes_other=colors_all[17]
+  )
+)
+
+
+breaksList <- seq(0, 1, by = 0.1)
+myfile <- paste('plots/Figure_1C.pdf',sep ='')
+pheatmap::pheatmap(heat_mat,filename =myfile,
+                   display_numbers=F,
+                   fontsize_number = 6,
+                   cluster_rows = F,
+                   cluster_cols = F,
+                   #breaks = breaksList,
+                   annotation_row = my_row_annot,
+                   annotation_colors = my_colour,
+                   color = brewer.pal(9,'Greys'),
+                   gaps_row = c(6,9,12,14),
+                   gaps_col = c(5,9,10,13,15))
+
+######################### make ridges plot with subsampled cells and fewer markers ######################### 
+
+clustering_cols <- c("CD3","CD4","CD8a",
+                     "CD20",
+                     "CD56",
+                     "CD16","CD14","CD123",'CD11c')
+
+Ncell <- 1000000
+a <- sample(nrow(allCells))
+asel <- a[1:Ncell]
+
+tmpLabels <- allCells[asel,'CellType']
+data <- allCells[asel,clustering_cols]
+data <- as.matrix(data)
+rng <- colQuantiles(data, probs = c(0.01, 0.99))
+data01 <- t((t(data) - rng[, 1]) / (rng[, 2] - rng[, 1]))
+data01[data01 < 0] <- 0
+data01[data01 > 1] <- 1
+test <- data.frame(data01)
+test$Class <- tmpLabels
+test <- melt(test,id.vars = c('Class'))
+allCells_annotated_ridgesPlot <- ggplot(test, aes(x = value, y = Class, fill = variable)) +
+  geom_density_ridges(scale=1)+
+  facet_wrap(~ variable, scales = "free", nrow = 4)+
+  theme_ridges() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=45, hjust=1,size = 7),
+        axis.text.y = element_text(hjust=1,size = 7),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),aspect.ratio = 1.58)+
+  scale_x_continuous(breaks=c(0,0.2,0.4,0.6,0.8,1))
+
+
+myfile <- paste('plots/RidgesPlot_allCells.pdf',sep ='')
+pdf(myfile)
+print(allCells_annotated_ridgesPlot)
+dev.off()
+
+```
+
+### Compute log2 fold changes between samples before and after aHSCT
+```{r generate plots with fold changes v1,echo=FALSE}
+
+cellFreq <- allCells %>% 
+  group_by(Sample,CellType) %>% 
+  summarise(samples = n())%>% 
+  mutate(freq = samples/sum(samples),total=sum(samples))
+
+group0 <- 'HC'
+groupA <- 'BL'
+groupD <- '100d'
+groupE <- '6m'
+groupF <- '12m'
+groupG <- '24m'
+
+#we compute the log fold change in abundance using as baseline the pre-aHSCT sample
+summaryFC <- data.frame()
+summaryFC_dable <- data_frame()
+for(myCellType in all_cellType_order){
+  
+  dt <- cellFreq[cellFreq$CellType==myCellType,]
+  
+  a1 <- dt[dt$Sample==groupA,]
+  a2 <- dt[dt$Sample==groupD,]
+  aAD <- data.frame(Comparison='100d/BL',
+                  CellType=myCellType,
+                  logFC = log2(a2[,'freq']/a1[,'freq']))
+                  #FC=(a2[,'freq']-a1[,'freq'])/a1[,'freq'])
+  summaryFC <- rbind(summaryFC,aAD)
+  
+  a3 <- dt[dt$Sample==groupE,]
+  aAE <- data.frame(Comparison='6m/BL',
+                  CellType=myCellType,
+                  logFC = log2(a3[,'freq']/a1[,'freq']))
+                  #FC=(a2[,'freq']-a1[,'freq'])/a1[,'freq'])
+  summaryFC <- rbind(summaryFC,aAE)
+  
+  a4 <- dt[dt$Sample==groupF,]
+  aAF <- data.frame(Comparison='12m/BL',
+                  CellType=myCellType,
+                  logFC = log2(a4[,'freq']/a1[,'freq']))
+                  #FC=(a2[,'freq']-a1[,'freq'])/a1[,'freq'])
+  summaryFC <- rbind(summaryFC,aAF)
+  
+  a5 <- dt[dt$Sample==groupG,]
+  aAG <- data.frame(Comparison='24m/BL',
+                  CellType=myCellType,
+                  logFC = log2(a5[,'freq']/a1[,'freq']))
+                  #FC=(a2[,'freq']-a1[,'freq'])/a1[,'freq'])
+  summaryFC <- rbind(summaryFC,aAG)
+  
+  #generate a table representation
+  tmp <- data.frame(
+                    `V5/V4` = aAD$freq,
+                    `V6/V4` = aAE$freq,
+                    `V7/V4` = aAF$freq,
+                    `V9/V4` = aAG$freq,
+                     CellType=myCellType)
+  summaryFC_dable <- rbind(summaryFC_dable,tmp)
+  
+}
+
+ summaryFC$CellType <- factor(summaryFC$CellType,levels = all_cellType_order)
+ summaryFC$Comparison <- factor(summaryFC$Comparison , levels = c('100d/BL',
+                                                                  '6m/BL',
+                                                                   '12m/BL',
+                                                                  '24m/BL'
+                                                                  ))  
+ 
+o <- ggplot(summaryFC,aes(x=reorder(CellType,-freq),y=freq,fill=CellType,color=CellType))+
+            geom_bar(stat='identity',width = 0.58,alpha=1,size=0.2,color='black')+
+            geom_hline(yintercept=-2, linetype="dashed",color = "red", size=0.2)+
+            geom_hline(yintercept=2, linetype="dashed",color = "red", size=0.2)+
+            theme_bw()+
+            facet_wrap(~Comparison,nrow = 1)+
+            ylim(-6.5,6.5)+
+            ylab('Relative abundance log2 fold change')+
+             scale_fill_manual(values=colors_all)+
+              theme(legend.position = "none",
+                axis.title.y = element_blank(),
+                axis.text.y = element_text(size = 10),
+                axis.text.x = element_text(angle = 0, vjust = 0.2, hjust = 0.94, size = 10),
+                axis.title.x = element_text(size = 10),
+                aspect.ratio = 1.8,
+                strip.text = element_text(size = 10,face='bold',lineheight=1))+coord_flip()
+
+myfile <- paste('plots/Figure_3B.pdf',sep ='')
+#png(myfile,width = 800,height = 800)
+pdf(myfile)
+print(o)
+dev.off() 
+
+o <- ggplot(summaryFC,aes(x=CellType,y=freq,fill=CellType,color=CellType))+
+            geom_bar(stat='identity',width = 0.58,alpha=1,size=0.2,color='black')+
+            geom_hline(yintercept=-2, linetype="dashed",color = "red", size=0.2)+
+            geom_hline(yintercept=2, linetype="dashed",color = "red", size=0.2)+
+            theme_bw()+
+            facet_wrap(~Comparison,nrow = 1)+
+            ylim(-6.5,6.5)+
+            ylab('Relative abundance log2 fold change')+
+             scale_fill_manual(values=colors_all)+
+              theme(legend.position = "none",
+                axis.title.y = element_blank(),
+                axis.text.y = element_text(size = 10),
+                axis.text.x = element_text(angle = 0, vjust = 0.2, hjust = 0.94, size = 10),
+                axis.title.x = element_text(size = 10),
+                aspect.ratio = 1.8,
+                strip.text = element_text(size = 10,face='bold',lineheight=1))+coord_flip()
+
+
+myfile <- paste('plots/Figure_3B_nonOrder.pdf',sep ='')
+#png(myfile,width = 800,height = 800)
+pdf(myfile)
+print(o)
+dev.off() 
+
+```
+
+### Generate summary statistics about cellular abundances per individual in the cohort
+Here we use anonymised data and thus it is impossible to reproduce the intermediate results presented in the original Figure 3A. Instead we provide anonymised pre-computed data to generate the same plot. 
+```{r generate summary statistics per patient,cache=TRUE,echo=FALSE,warning=FALSE}
+
+load('/Home/siv32/dkl081/Desktop/RAMMS/code_repo/summaryStat.RDa')
+
+#visualise the lines
+summaryStat$TimePoint <- factor(summaryStat$TimePoint,levels =c(group0,groupA,groupD,groupE,groupF,groupG) )
+summaryStat$CellType <- factor(summaryStat$CellType,levels = myCellTypes)
+
+o1 <- ggplot(summaryStat, aes(TimePoint, Avg,fill=CellType,color=CellType)) +
+    geom_line(aes(group = Flag),color='black',alpha=0.6) +
+    geom_errorbar( aes(ymin = Avg-StdE, ymax = Avg+StdE),width = 0.15) +
+    geom_point(size = 1.2)+
+    facet_wrap(~CellType,nrow=3,scales = 'free_y')+
+    theme_clean() +
+    ylab('Mean abundance with SE')+
+    scale_fill_manual(values = colors_all)+
+    scale_color_manual(values = colors_all)+
+    theme(axis.text.y = element_text( size = 8 ),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.95, size = 8),
+          axis.title.x = element_blank(),
+          axis.title.y = element_text( size = 8 ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.8)
+
+myfile <- paste('plots/Figure_3A.pdf',sep ='')
+#png(myfile,width = 800,height = 800)
+pdf(myfile)
+print(o1)
+dev.off() 
+
+
+```
+
+### Differential cell type abundance using diffcyt
+We used the paired matrix design, which requires to use data with patient information available. However,our publicly available data are anonymised and thus it is impossible to reproduce the intermediate results presented in the volcano plot (Figure 3C). Instead we provide aggregated pre-computed data to generate the same plot. 
+
+```{r volcano plot,cache=TRUE,echo=FALSE,eval=FALSE}
+ 
+load('/Home/siv32/dkl081/Desktop/RAMMS/code_repo/volcanoPlotData.RDa')
+
+o <- ggplot(data=volcanoPlot_data, aes(x=FC, y=-log10(AdjPvalue),fill=CellType,color=CellType)) +
+  geom_point(size=2)+
+  #geom_label_repel(aes(label=CellType),color='black',size=2,segment.size=0.1,box.padding=0.1,alpha=0.818,
+  #                 max.overlaps=30)+
+  geom_text(aes(label=CellType),color='black',size=1.8,check_overlap = TRUE,hjust = 0.1, nudge_x = 0.05)+
+  theme_bw()+
+  xlim(-6.5,6.5)+
+  facet_wrap(~Comparison,scales='free_y',nrow=1)+  
+  #scale_fill_manual(values = c('darkred','darkmagenta','cyan3'))+
+  ylab('-log10(Adjusted p value)')+
+  xlab('Relative abundance log2 fold change')+
+  geom_vline(xintercept=c(-2, 2), col="red",size=0.2,linetype="dashed") +
+  geom_hline(yintercept=-log10(0.05), col="red",size=0.2,linetype="dashed")+
+  scale_fill_manual(values=colors_all)+
+  scale_color_manual(values=colors_all)+
+  theme(axis.text.y = element_text( size = 12 ),
+        axis.text.x = element_text( size = 12),
+        axis.title.y = element_text( size = 12 ),
+        axis.title.x = element_text( size = 12 ),
+        legend.position = "none", legend.text=element_text(size=12),
+        panel.border = element_rect(colour = "black", fill = NA),
+        legend.title = element_blank(),aspect.ratio = 1)+
+  guides(fill=guide_legend(nrow=2,override.aes = list(size=2.8)))
+
+myfile <- paste('plots/Figure_3C.pdf',sep ='')
+#png(myfile,width = 800,height = 800)
+pdf(myfile)
+print(o)
+dev.off() 
+```
+
