@@ -24,7 +24,8 @@ The framework is presented using different R Markdowns that implement parts of t
 
 Important note for users
 
-Please modify all paths found in the R markdowns and change them to your computer's file system. Since we are not allowed to share patient personal information, we provide anonymised and aggregated single-cell data. For some parts of the analysis we also provide already processed data that have been non-identifiable. For more specific information please contact the authors.
+Please modify all paths found in the R markdowns and change them to your computer's file system. Since we are not allowed to share patient personal information, we provide anonymised and aggregated single-cell data. For some parts of the analysis we also provide already processed data that have been maed non-identifiable. 
+For more specific information please contact the authors.
 
 ## Data Sources
 

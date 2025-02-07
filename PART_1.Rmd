@@ -55,7 +55,6 @@ library(ggridges)
 
 ### Initialise working directory and load in-house functions
 ```{r initialise workspace,cache=TRUE,echo=FALSE}
-
 setwd("/Home/siv32/dkl081/Desktop/RAMMS/code_repo")
 ```
 
@@ -504,10 +503,16 @@ for(myCellType in all_cellType_order){
                                                                   '24m/BL'
                                                                   ))  
  
+
+quantile(summaryFC$freq,probs = seq(0,1,0.05))
+c3 <- quantile(summaryFC$freq,probs = seq(0,1,0.05))[3]
+#threshold for the higher values
+c4 <- quantile(summaryFC$freq,probs = seq(0,1,0.05))[19]
+ 
 o <- ggplot(summaryFC,aes(x=reorder(CellType,-freq),y=freq,fill=CellType,color=CellType))+
             geom_bar(stat='identity',width = 0.58,alpha=1,size=0.2,color='black')+
-            geom_hline(yintercept=-2, linetype="dashed",color = "red", size=0.2)+
-            geom_hline(yintercept=2, linetype="dashed",color = "red", size=0.2)+
+            geom_hline(yintercept=c3, linetype="dashed",color = "red", size=0.2)+
+            geom_hline(yintercept=c4, linetype="dashed",color = "red", size=0.2)+
             theme_bw()+
             facet_wrap(~Comparison,nrow = 1)+
             ylim(-6.5,6.5)+
@@ -606,7 +611,7 @@ o <- ggplot(data=volcanoPlot_data, aes(x=FC, y=-log10(AdjPvalue),fill=CellType,c
   #scale_fill_manual(values = c('darkred','darkmagenta','cyan3'))+
   ylab('-log10(Adjusted p value)')+
   xlab('Relative abundance log2 fold change')+
-  geom_vline(xintercept=c(-2, 2), col="red",size=0.2,linetype="dashed") +
+  geom_vline(xintercept=c(c3, c4), col="red",size=0.2,linetype="dashed") +
   geom_hline(yintercept=-log10(0.05), col="red",size=0.2,linetype="dashed")+
   scale_fill_manual(values=colors_all)+
   scale_color_manual(values=colors_all)+
