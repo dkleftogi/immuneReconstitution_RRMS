@@ -80,8 +80,7 @@ marker_info <- data.frame(Channel=NA,
 ```{r RadViz/FreeViz analysis, echo=TRUE, cache=TRUE,eval=FALSE}
 
 #name the states you want to analyse
-promptStates2 <- c("CD4_Naive_s2",'CD8_Naive_s4','B_Naive_s1',
-                   'CD4_Memory_s7','CD8_Memory_s2','B_Memory_s6')   
+promptStates2 <- c('CD4_Memory_s7',                                           'CD4_Naive_s2','CD4_Naive_s3','CD4_Naive_s4','CD4_Naive_s6','CD4_Naive_s9',                                                  'CD8_Memory_s2','CD8_Memory_s6','CD8_Naive_s2','CD8_Naive_s3','CD8_Naive_s4','CD8_Naive_s6','T_DN_s3','T_other_s4','B_Memory_s6','B_Memory_s8','B_Naive_s1')
 
 #load the cells from the validation cohort
 load('allLymphocytes_annotated.RDa')
@@ -121,6 +120,7 @@ for(myState in promptStates2){
     dt <- rbind(myStateData_discovery,myStateData_validation)
     a <- which(dt$Sample=='HC')
     dt <- dt[-a,]
+    dt <- dt[dt$Sample=='BL'| dt$Sample=='24m', ]
     n <- min(table(dt$Sample))
     #we use 5000 cells if available...otherwise the minimum find
     if(n >= 5000){
@@ -132,10 +132,10 @@ for(myState in promptStates2){
     ###############################################################################
     combinedData <- data.frame()
     combinedDist <- data.frame()
-    N <- 50
+    N <- 10
     for(iter in 1:N){
        
-        if(iter%%10==0){
+        if(iter%%5==0){
           str <- paste('Iter: ',iter,sep='')
           cat(str)
           gc()
@@ -146,7 +146,7 @@ for(myState in promptStates2){
     
         treat.S <- do.optimFreeviz(myStateData.sub[,1:28],classes = myStateData.sub$Sample) 
         data.fv <- do.radviz(myStateData.sub[,1:28], treat.S)   
-        data.fv$proj$data$Sample <- factor(myStateData.sub$Sample,levels = c('BL','100d','6m','12m','24m'))
+        data.fv$proj$data$Sample <- factor(myStateData.sub$Sample,levels = c('BL','24m'))
         data.fv <- rescalePlot(data.fv)
         #fetch the data from the FreeViz object
         tmp_dt <- data.frame(data.fv$proj$data)
@@ -194,7 +194,7 @@ for(myState in promptStates2){
                     legend.position = "none",aspect.ratio = 0.25)
     
     ###############################################################################
-    combinedData$Sample <- factor(combinedData$Sample,levels=c('BL','100d','6m','12m','24m'))
+    combinedData$Sample <- factor(combinedData$Sample,levels=c('BL','24m'))
     
     o2 <- ggplot(combinedData, aes(rx,ry,color=Sample))+
             #geom_point()+              
@@ -210,260 +210,107 @@ for(myState in promptStates2){
                           axis.title.y = element_blank(),
                           legend.position = "bottom",
                           aspect.ratio = 1)+
-                    scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
+                    scale_color_manual(values = c("deepskyblue2", "rosybrown4"))+
                     guides(color = guide_legend(override.aes = list(size=18),nrow=1,title=""))
     
       ###############################################################################
       # below we save the generated plots and produce marker expression plots for selected markers
       ###############################################################################
     
-    if(myState=='CD4_Naive_s2'){
-      
-      myfile <- paste('plots/Figure_6a.pdf',sep ='')
-      pdf(myfile)
-      print(o2)
-      dev.off()
-      
-       myfile <- paste('plots/Supp_Figure_19a.pdf',sep ='')
-       pdf(myfile)
-       print(o3)
-       dev.off()
- 
-      tmp <- dt[,c('CD194','CD38','CD235ab','CD127','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-      o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.4)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-      
-      myfile <- paste('plots/Supp_Figure_20a.pdf',sep ='')
-      pdf(myfile,width = 9)
-      print(o)
-      dev.off()
-    }
+  myfile <- paste('plots/Figure_6_',myState,'.pdf',sep ='')
+  pdf(myfile)
+  print(o2)
+  dev.off()
+  
+  myfile <- paste('plots/Supp_Figure_19_',myState,'.pdf',sep ='')
+  pdf(myfile)
+  print(o3)
+  dev.off()
     
-    if(myState=='CD8_Naive_s4'){
-      
-        myfile <- paste('plots/Figure_6b.pdf',sep ='')
-        pdf(myfile)
-        print(o2)
-        dev.off()
-      
-        myfile <- paste('plots/Supp_Figure_19b.pdf',sep ='')
-        pdf(myfile)
-        print(o3)
-        dev.off()
-      
-      tmp <- dt[,c('CD27','CD194','CD195','CD49d','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-      o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.8)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-      
-      myfile <- paste('plots/Supp_Figure_20b.pdf',sep ='')
-      pdf(myfile,width = 9)
-      print(o)
-      dev.off()
-    }
-      
-    if(myState=='B_Naive_s1'){
-      
-        myfile <- paste('plots/Figure_6c.pdf',sep ='')
-        pdf(myfile)
-        print(o2)
-        dev.off()
-      
-        myfile <- paste('plots/Supp_Figure_19c.pdf',sep ='')
-        pdf(myfile)
-        print(o3)
-        dev.off()
-      
-      tmp <- dt[,c('CD38','CD235ab','CD196','HLADR','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-      o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.8)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-      
-      myfile <- paste('plots/Supp_Figure_20c.pdf',sep ='')
-      pdf(myfile,width = 9)
-      print(o)
-      dev.off()
-    }
-   
-     if(myState=='CD4_Memory_s7'){
-      
-       myfile <- paste('plots/Figure_6d.pdf',sep ='')
-       pdf(myfile)
-       print(o2)
-       dev.off()
-      
-       myfile <- paste('plots/Supp_Figure_19d.pdf',sep ='')
-       pdf(myfile)
-       print(o3)
-       dev.off()
-       
-      tmp <- dt[,c('CD27','CD194','CD161','CD195','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-     o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.9)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-      
-        myfile <- paste('plots/Supp_Figure_20d.pdf',sep ='')
-        pdf(myfile,width = 9)
-        print(o)
-        dev.off()
-     
-    }
-   
- 
-    if(myState=='CD8_Memory_s2'){
-      
-        myfile <- paste('plots/Figure_6e.pdf',sep ='')
-        pdf(myfile)
-        print(o2)
-        dev.off()
-      
-        myfile <- paste('plots/Supp_Figure_19e.pdf',sep ='')
-        pdf(myfile)
-        print(o3)
-        dev.off()
-      
-      tmp <- dt[,c('CD27','CD127','CD49d','CD195','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-      o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.9)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-        
-        myfile <- paste('plots/Supp_Figure_20e.pdf',sep ='')
-        pdf(myfile,width = 9)
-        print(o)
-        dev.off()
-      
-    }
-    
-    
-    if(myState=='B_Memory_s6'){
-      
-       myfile <- paste('plots/Figure_6f.pdf',sep ='')
-      pdf(myfile)
-      print(o2)
-      dev.off()
-      
-       myfile <- paste('plots/Supp_Figure_19f.pdf',sep ='')
-       pdf(myfile)
-       print(o3)
-       dev.off()
-      
-      tmp <- dt[,c('CD194','CD38','HLADR','CD44','Sample')]
-      tmp <- melt(tmp)
-      tmp$Sample <- factor( tmp$Sample,levels = c('BL','100d','6m','12m','24m'))
-     o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
-              geom_boxplot(width=0.15,alpha=0.8,size=0.45,color='black',
-                 outlier.colour = "black",
-                 outlier.shape =NA,
-                 outlier.fill = "red",
-                 outlier.size = 0.05,notch = FALSE)+
-                 facet_wrap(~variable,nrow=1,scales ='free_x')+
-              scale_color_manual(values = c("deepskyblue2","magenta2","indianred2","rosybrown2", "rosybrown4"))+
-              ylab('Expression')+
-              ggtitle(myState)+
-              theme_clean() +
-              ylim(0,0.9)+
-              theme(axis.text.y = element_text( size = 12 ),
-                    axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 12),
-                    axis.title.x = element_blank(),
-                    axis.title.y = element_text( size = 12 ),
-                    strip.text = element_text(size = 12,face='bold',lineheight=1),
-                    legend.position = "none",aspect.ratio = 0.81)
-      
-    
-        myfile <- paste('plots/Supp_Figure_20f.pdf',sep ='')
-        pdf(myfile,width = 9)
-        print(o)
-        dev.off()
-    }
 }
+
 ```
 
+
+### Visualise the markers expression distribution using boxplots
+
+```{r visualise marker expression, echo=TRUE, cache=TRUE,eval=FALSE}
+
+myC <- 1
+for(myState in promptStates2){
+    
+    gc()
+    str <- paste('Processing state: ',myState,sep='')
+    cat(str)
+    cat('')
+    
+    if(myC%%5==0){
+          gc()
+    }
+    
+    #split the name and find the number
+    myStateIdx <- stringr::str_extract(myState, "(\\d+$)")
+    myStateIdx <- as.integer(myStateIdx)
+    myCelltype <- substr(myState, 1, nchar(myState)-3)
+    
+    myfile <- paste('FlowSOM_allData_states_',myCelltype,'.RDa',sep ='')
+    load(myfile) 
+    
+    myMarkers <- colnames(data_df_test)[1:28]
+    myStateData_discovery <- data_df_test[data_df_test$pop_labels==myStateIdx,]      
+    #prepare the data for modelling using the lda.model
+    myCellTypeData <- allCells[allCells$CellType==myCelltype, ]
+    A <- predict(lda.model1,myCellTypeData[,myMarkers])
+    myCellTypeData$pop_labels <- A$class
+    posteriors <- as.matrix(apply(A$posterior,1,max))
+    plot(density(posteriors))
+    #filter the data based on prob
+    idx1 <- which(posteriors>0.6)
+    myCellTypeData <- myCellTypeData[idx1,]
+    
+    myStateData_validation <- myCellTypeData[myCellTypeData$pop_labels==myStateIdx,]   
+    myStateData_validation <- myStateData_validation[,colnames(myStateData_discovery)]
+  
+    dt <- rbind(myStateData_discovery,myStateData_validation)
+    a <- which(dt$Sample=='HC')
+    dt <- dt[-a,]
+    dt <- dt[dt$Sample=='BL'| dt$Sample=='24m', ]
+    
+    tmp <- dt[,c(1:28,30)]
+    tmp <- melt(tmp)
+    tmp$Sample <- factor( tmp$Sample,levels = c('BL','24m'))
+  o <- ggplot(tmp,aes(x=Sample,y=value,fill=Sample,color=Sample))+
+    geom_boxplot(width=0.15,alpha=0.8,size=0.25,color='black',
+                 outlier.colour = "red",
+                 outlier.shape =20,
+                 outlier.fill = "red",
+                 outlier.size = 0.01,notch = FALSE)+
+    facet_wrap(~variable,nrow=4,scales = 'free_y')+
+    scale_color_manual(values = c("deepskyblue2", "rosybrown4"))+
+    scale_fill_manual(values = c("deepskyblue2", "rosybrown4"))+
+    ylab('Expression')+
+    ggtitle(myState)+
+    theme_clean() +
+    theme(axis.text.y = element_text( size = 8 ),
+          axis.text.x = element_text(angle = 0, vjust = 1, hjust = 0.5, size = 8),
+          axis.title.x = element_blank(),
+          axis.title.y = element_text( size = 8,face='bold' ),
+          strip.text = element_text(size = 8,face='bold',lineheight=1),
+          legend.position = "none",aspect.ratio = 0.81)
+    
+  myfile <- paste('plots/Supp_Figure_20_',myState,'.pdf',sep ='')
+  pdf(myfile,width = 8)
+  print(o)
+  dev.off()
+  
+  myC <- myC + 1
+  
+}
+
+
+
+
+```
 
 
 ### SARA analysis for previous populations and top-ranked markers
@@ -472,17 +319,22 @@ The SARA code was adopted from its original implementation in MATLAB. For simpli
 ```{r SARA, echo=TRUE, cache=TRUE,eval=FALSE}
 
 source('utilityFunc.R')
-promptStates2 <- c("CD4_Naive_s2",'CD8_Naive_s4','B_Naive_s1',
-                   'CD4_Memory_s7','CD8_Memory_s2','B_Memory_s6')  
 
 #number of permutations 
-N <- 10000
+N <- 5000
 br <- data.frame()
+D <- 1
+PVALUES <- data.frame()
 for(myState in promptStates2){
     
     str <- paste('Processing state: ',myState,sep='')
     cat(str)
     cat('')
+    
+     if(D%%5==0){
+          gc()
+    }
+    
   
     myStateIdx <- stringr::str_extract(myState, "(\\d+$)")
     myStateIdx <- as.integer(myStateIdx)
@@ -509,8 +361,8 @@ for(myState in promptStates2){
     dt <- dt[-a,]
     n <- min(table(dt$Sample))
     #select equal amount of cells
-    if(n >= 10000){
-      NCells <- 10000
+    if(n >= 20000){
+      NCells <- 20000
     }else{
       NCells <- n
     }
@@ -520,20 +372,19 @@ for(myState in promptStates2){
         group_by(Sample) %>% 
         sample_n(NCells,replace = FALSE)     
     dt <- as.data.frame(dt)
+  
+    summaryAllSARA <- data.frame()
+    #stateMarkerNames <- c('CD194','CD38','HLADR','CD44')
+    stateMarkerNames <- myMarkers
+    IDX <- 1
+    SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
+    SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
+    for(myMarker in stateMarkerNames){
     
-    if(myState=='CD4_Naive_s2'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD194','CD38','CD235ab','CD127')
-      stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
         str <- paste('  Processing marker:',myMarker,sep='')
         cat(str)
         cat('\n') 
-     
+        
         channelA <- dt[dt$Sample=='BL',myMarker]
         channelB <- dt[dt$Sample=='24m',myMarker]
         #generate the ecdf
@@ -545,19 +396,23 @@ for(myState in promptStates2){
         #perform permutations
         myCounter <- 0
         for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
+          
+          #shuffle the condition channel and generate random ecdf
+          C <- sample(channelB)
+          ecdfC <- ecdf(C)
+          myC <- ecdfC(C)
+          #permuted 
+          permEMD <- suppressWarnings(manhattan_dist(A,myC))
+          if(permEMD>myEMD){
+            myCounter <- myCounter + 1
+          }
         }
         pvalue <- myCounter/N
+        d <- data.frame(State=myState,
+                        Marker=myMarker,
+                        pvalue=pvalue)
         pvalue
+        PVALUES <- rbind(PVALUES,d)
         #myEMD is a distance --> larger distance more different the samples
         #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
         #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
@@ -567,320 +422,63 @@ for(myState in promptStates2){
         SARApvalues[1,IDX] <- pvalue
         IDX <- IDX + 1
     }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    gc()
-    br <- rbind(br,melt(summaryAllSARA))
-    }
-    ###########################################################
-    if(myState=='CD8_Naive_s4'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD27','CD194','CD49d','CD195')
-       stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
-        str <- paste('  Processing marker:',myMarker,sep='')
-        cat(str)
-        cat('\n') 
-     
-        channelA <- dt[dt$Sample=='BL',myMarker]
-        channelB <- dt[dt$Sample=='24m',myMarker]
-        #generate the ecdf
-        ecdfA<- ecdf(channelA)
-        ecdfB<- ecdf(channelB)
-        A <- ecdfA(channelA)
-        B <- ecdfB(channelB)
-        myEMD <- suppressWarnings(manhattan_dist(A,B))
-        #perform permutations
-        myCounter <- 0
-        for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
-        }
-        pvalue <- myCounter/N
-        pvalue
-        #myEMD is a distance --> larger distance more different the samples
-        #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
-        #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
-        #overall higher SARA score means greater differences between the two experimental conditions
-        myScore <- myEMD*sign(mean(channelB,na.rm = T)-mean(channelA,na.rm = T))*(1-pvalue)
-        SARAscores[1,IDX] <- myScore
-        SARApvalues[1,IDX] <- pvalue
-        IDX <- IDX + 1
-    }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    br <- rbind(br,melt(summaryAllSARA))
-    gc()
-    }
-    ###########################################################
-    if(myState=='B_Naive_s1'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD196','CD38','HLADR','CD235ab')
-      stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
-        str <- paste('  Processing marker:',myMarker,sep='')
-        cat(str)
-        cat('\n') 
-     
-        channelA <- dt[dt$Sample=='BL',myMarker]
-        channelB <- dt[dt$Sample=='24m',myMarker]
-        #generate the ecdf
-        ecdfA<- ecdf(channelA)
-        ecdfB<- ecdf(channelB)
-        A <- ecdfA(channelA)
-        B <- ecdfB(channelB)
-        myEMD <- suppressWarnings(manhattan_dist(A,B))
-        #perform permutations
-        myCounter <- 0
-        for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
-        }
-        pvalue <- myCounter/N
-        pvalue
-        #myEMD is a distance --> larger distance more different the samples
-        #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
-        #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
-        #overall higher SARA score means greater differences between the two experimental conditions
-        myScore <- myEMD*sign(mean(channelB,na.rm = T)-mean(channelA,na.rm = T))*(1-pvalue)
-        SARAscores[1,IDX] <- myScore
-        SARApvalues[1,IDX] <- pvalue
-        IDX <- IDX + 1
-    }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    gc()
-     br <- rbind(br,melt(summaryAllSARA))
-    }
-    ###########################################################
-     if(myState=='CD4_Memory_s7'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD27','CD195','CD161','CD194')
-      stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
-        str <- paste('  Processing marker:',myMarker,sep='')
-        cat(str)
-        cat('\n') 
-     
-        channelA <- dt[dt$Sample=='BL',myMarker]
-        channelB <- dt[dt$Sample=='24m',myMarker]
-        #generate the ecdf
-        ecdfA<- ecdf(channelA)
-        ecdfB<- ecdf(channelB)
-        A <- ecdfA(channelA)
-        B <- ecdfB(channelB)
-        myEMD <- suppressWarnings(manhattan_dist(A,B))
-        #perform permutations
-        myCounter <- 0
-        for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
-        }
-        pvalue <- myCounter/N
-        pvalue
-        #myEMD is a distance --> larger distance more different the samples
-        #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
-        #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
-        #overall higher SARA score means greater differences between the two experimental conditions
-        myScore <- myEMD*sign(mean(channelB,na.rm = T)-mean(channelA,na.rm = T))*(1-pvalue)
-        SARAscores[1,IDX] <- myScore
-        SARApvalues[1,IDX] <- pvalue
-        IDX <- IDX + 1
-    }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    gc()
-     br <- rbind(br,melt(summaryAllSARA))
-    }
-    ###########################################################
-    if(myState=='CD8_Memory_s2'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD127','CD27','CD195','CD49d')
-      stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
-        str <- paste('  Processing marker:',myMarker,sep='')
-        cat(str)
-        cat('\n') 
-     
-        channelA <- dt[dt$Sample=='BL',myMarker]
-        channelB <- dt[dt$Sample=='24m',myMarker]
-        #generate the ecdf
-        ecdfA<- ecdf(channelA)
-        ecdfB<- ecdf(channelB)
-        A <- ecdfA(channelA)
-        B <- ecdfB(channelB)
-        myEMD <- suppressWarnings(manhattan_dist(A,B))
-        #perform permutations
-        myCounter <- 0
-        for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
-        }
-        pvalue <- myCounter/N
-        pvalue
-        #myEMD is a distance --> larger distance more different the samples
-        #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
-        #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
-        #overall higher SARA score means greater differences between the two experimental conditions
-        myScore <- myEMD*sign(mean(channelB,na.rm = T)-mean(channelA,na.rm = T))*(1-pvalue)
-        SARAscores[1,IDX] <- myScore
-        SARApvalues[1,IDX] <- pvalue
-        IDX <- IDX + 1
-    }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    gc()
-     br <- rbind(br,melt(summaryAllSARA))
-    }
-    ###########################################################
-     if(myState=='B_Memory_s6'){
-      summaryAllSARA <- data.frame()
-      #stateMarkerNames <- c('CD194','CD38','HLADR','CD44')
-      stateMarkerNames <- myMarkers
-      IDX <- 1
-      SARAscores <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      SARApvalues <- matrix(-1,nrow = 1,ncol=length(stateMarkerNames))
-      for(myMarker in stateMarkerNames){
-      
-        str <- paste('  Processing marker:',myMarker,sep='')
-        cat(str)
-        cat('\n') 
-     
-        channelA <- dt[dt$Sample=='BL',myMarker]
-        channelB <- dt[dt$Sample=='24m',myMarker]
-        #generate the ecdf
-        ecdfA<- ecdf(channelA)
-        ecdfB<- ecdf(channelB)
-        A <- ecdfA(channelA)
-        B <- ecdfB(channelB)
-        myEMD <- suppressWarnings(manhattan_dist(A,B))
-        #perform permutations
-        myCounter <- 0
-        for(myPerm in 1:N){
-      
-            #shuffle the condition channel and generate random ecdf
-            C <- sample(channelB)
-            ecdfC <- ecdf(C)
-            myC <- ecdfC(C)
-            #permuted 
-            permEMD <- suppressWarnings(manhattan_dist(A,myC))
-            if(permEMD>myEMD){
-                  myCounter <- myCounter + 1
-            }
-        }
-        pvalue <- myCounter/N
-        pvalue
-        #myEMD is a distance --> larger distance more different the samples
-        #sign(mean(channelB)-mean(channelA) --> +1 if mean at the condition is greater than mean at baseline
-        #1-pvalue is a score --> small p value means more significant changes so 1-p as score gets higher
-        #overall higher SARA score means greater differences between the two experimental conditions
-        myScore <- myEMD*sign(mean(channelB,na.rm = T)-mean(channelA,na.rm = T))*(1-pvalue)
-        SARAscores[1,IDX] <- myScore
-        SARApvalues[1,IDX] <- pvalue
-        IDX <- IDX + 1
-    }
-    SARAscores <- data.frame(SARAscores)
-    colnames(SARAscores) <- stateMarkerNames
-    SARAscores$CellType <- myState
-    #SARAscores$pvalue <- pvalue
-    summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
-    gc()
-     br <- rbind(br,melt(summaryAllSARA))
-    }
-    ###########################################################
-    
-    
-    
-   
-
+  SARAscores <- data.frame(SARAscores)
+  colnames(SARAscores) <- stateMarkerNames
+  SARAscores$CellType <- myState
+  #SARAscores$pvalue <- pvalue
+  summaryAllSARA <- rbind(summaryAllSARA,SARAscores)
+  gc()
+  br <- rbind(br,melt(summaryAllSARA))
+  D <- D + 1
 }
 
-br$CellType <- factor(br$CellType,levels=c("CD4_Naive_s2",'CD8_Naive_s4','B_Naive_s1',
-                   'CD4_Memory_s7','CD8_Memory_s2','B_Memory_s6'))
+save(br,file='data_Supp_Figure_21.RDa')
+save(PVALUES,file='pvalues_Supp_Figure_21.RDa')
+
+br$CellType <- factor(br$CellType,levels=c('CD4_Memory_s7',
+                                           'CD4_Naive_s2','CD4_Naive_s3','CD4_Naive_s4','CD4_Naive_s6','CD4_Naive_s9',                                                 'CD8_Memory_s2','CD8_Memory_s6',
+   'CD8_Naive_s2','CD8_Naive_s3','CD8_Naive_s4','CD8_Naive_s6',
+   'T_DN_s3',
+   'T_other_s4',
+   'B_Memory_s6','B_Memory_s8',
+   'B_Naive_s1'))
+
+
+colors_all <- c('slategray1',
+                'slategray3', 'slategray3', 'slategray3', 'slategray3', 'slategray3',
+                'steelblue1', 'steelblue1',
+                'steelblue3','steelblue3','steelblue3','steelblue3',
+                'darkslategrey','slateblue4',
+                'firebrick1','firebrick1',
+                'firebrick4')
+
+
  #visualise the SARA scores 
     o <- ggplot(br) + aes(x=variable,y=value,fill=CellType)+
           geom_bar(stat='identity',position='stack',width = 0.48,alpha=1,color='black',size=0.15)+
-          facet_wrap(~CellType,scales='free_y',nrow=2)+
+          facet_wrap(~CellType,scales='free_y',nrow=4)+
           geom_hline(yintercept = 0,color='red',size=0.25)+
           theme_clean()+
       ylab('SARA score')+
       xlab('')+
+      scale_color_manual(values = colors_all)+
+      scale_fill_manual(values = colors_all)+
       theme(axis.text.y = element_text( size = 10 ),
         axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 10,face = 'bold'),
         axis.title.x = element_text( size = 10,face = 'bold' ),
         axis.title.y = element_text( size = 12,face='bold' ),
         strip.text = element_text(size = 12,face='bold',lineheight=1),
-        legend.position = "none",aspect.ratio = 0.8)+
+        legend.position = "none",aspect.ratio = 0.5)+
   #scale_fill_manual(values=myPalete)+
-  guides(fill = guide_legend(override.aes = list(size=1.5),nrow=2,title=""))
+      guides(fill = guide_legend(override.aes = list(size=1.5),nrow=2,title=""))
 
      myfile <- paste('plots/Supp_Figure_21.pdf',sep ='')
-     pdf(myfile,width = 18,height = 10)
+     pdf(myfile,width = 20,height = 20)
      print(o)
      dev.off()
+     
+     
+     
 
 ```
 
