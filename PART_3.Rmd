@@ -132,7 +132,7 @@ for(myState in promptStates2){
     ###############################################################################
     combinedData <- data.frame()
     combinedDist <- data.frame()
-    N <- 10
+    N <- 1000
     for(iter in 1:N){
        
         if(iter%%5==0){
