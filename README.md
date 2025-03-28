@@ -34,7 +34,7 @@ Below we provide the sources of the datasets used in the study:
 
 Annotated mass cytometry datasets are available at: Zenodo repository (private at this stage)
 
-In the same repo we provide trained LDA models for the cellular states as well as other pre-processed data that have are non-identifiable.
+In the same repo we provide trained LDA models for the cellular states as well as other pre-processed data that are non-identifiable.
 
 Please contact the authors to grant access to the data before the article publication. 
 
