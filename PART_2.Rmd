@@ -7,8 +7,6 @@ output: html_document
 
 ### Utility
 
-The data interpretation is performed in collaboration with **Dr. Sonia Gavasso and Jonas Haugsøen**. 
-
 The utility of this code is to reproduce the part of the analysis with the cellular states as summarised in main Figures 4-5 of the manuscript.
 
 ### Contact

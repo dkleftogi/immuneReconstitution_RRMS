@@ -7,8 +7,6 @@ output: html_document
 
 ### Utility
 
-The data interpretation is performed in collaboration with **Dr. Sonia Gavasso and Jonas Haugsøen**. 
-
 The utility of this code is to load the processed data and generate visualisations that correspond to Figure 1-3 of the manuscript.
 
 ### Contact
